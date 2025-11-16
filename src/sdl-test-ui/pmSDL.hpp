@@ -178,7 +178,7 @@ private:
     size_t _height{0};
     size_t _fps{60};
 
-    bool _shuffle{true};
+    bool _shuffle{false};
 
     // audio input device characteristics
     unsigned int _numAudioDevices{0};

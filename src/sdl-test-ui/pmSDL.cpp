@@ -740,6 +740,12 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
     const Uint8* ptr = audioBuf;
     Uint32 remaining = audioLen;
 
+    // Save current window/render state so we can restore it when finished or cancelled
+    int saved_w = static_cast<int>(_width);
+    int saved_h = static_cast<int>(_height);
+    bool saved_fullscreen = _isFullScreen;
+    bool saved_stretch = this->stretch;
+
     // For each frame, feed audio slice and render for each resolution
     for (size_t frameIndex = 0; frameIndex < totalFrames && !done; ++frameIndex) {
         if(!is_rendering)
@@ -830,8 +836,17 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
         if (done) break;
     }
 
-    // finished
-    this->render_progress.store(1.0f);
+    // finished (or cancelled) - restore window/render state
+    if (_isFullScreen != saved_fullscreen) {
+        // toggle back to previous fullscreen state
+        toggleFullScreen();
+    }
+    // restore saved size
+    this->resize(static_cast<unsigned int>(saved_w), static_cast<unsigned int>(saved_h));
+    this->stretch = saved_stretch;
+
+    // final progress and state
+    this->render_progress.store(is_rendering ? 1.0f : 0.0f);
     is_rendering = false;
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Render complete. %zu frames written to %s", totalFrames, outDir.c_str());
 }
