@@ -455,7 +455,7 @@ void projectMSDL::renderFrame()
             // You can set a fixed width for the entire table.
             // For example, if you estimate a character is ~8 pixels wide, 100 chars would be ~800 pixels.
             int width = 600;
-            float table_width = columns * width; // A rough estimation for width
+            int table_width = columns * width; // A rough estimation for width
 
             ImGui::PushItemWidth(table_width);
 
@@ -470,9 +470,18 @@ void projectMSDL::renderFrame()
                         size_t idx = static_cast<size_t>(r) + static_cast<size_t>(c) * static_cast<size_t>(rows);
 
                         if (idx < total) {
-                            // Example with text wrapping
+                            // Clickable/selectable preset entry. Truncate long names for display.
+                            std::string display = std::to_string(idx) + ": " + presets[idx];
                             ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + width);
-                            ImGui::Text("%zu: %s", idx, presets[idx].c_str());
+                            // Use a unique ID per item to avoid collisions in ImGui
+                            ImGui::PushID(static_cast<int>(idx));
+                            if (ImGui::Selectable(display.c_str(), false, 0, ImVec2((float)width, 0.0f))) {
+                                // User clicked this preset: switch playlist position (hard cut)
+                                projectm_playlist_set_position(_playlist, static_cast<uint32_t>(idx), true);
+                                // Update window title to reflect newly selected preset
+                                UpdateWindowTitle();
+                            }
+                            ImGui::PopID();
                             ImGui::PopTextWrapPos();
                         }
                     }
@@ -485,9 +494,8 @@ void projectMSDL::renderFrame()
 
         ImGui::Render();
         ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
-
-        SDL_GL_SwapWindow(_sdlWindow);
     }
+    SDL_GL_SwapWindow(_sdlWindow);
 }
 
 void projectMSDL::init(SDL_Window* window)
