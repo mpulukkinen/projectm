@@ -32,31 +32,35 @@
  */
 
 #include "pmSDL.hpp"
+#include <cstdlib>
+
+// audio loader helper (implemented in audio_loader.cpp)
+bool loadAudioFile(const std::string& path, SDL_AudioSpec& outSpec, Uint8** outBuf, Uint32* outLen);
 
 static int mainLoop(void *userData) {
     projectMSDL **appRef = (projectMSDL **)userData;
     auto app = *appRef;
-    
+
 #if UNLOCK_FPS
     auto start = startUnlockedFPSCounter();
 #endif
-    
+
     // frame rate limiter
     int fps = app->fps();
     if (fps <= 0)
         fps = 60;
     const Uint32 frame_delay = 1000/fps;
     Uint32 last_time = SDL_GetTicks();
-    
+
     // loop
     while (! app->done) {
         // render
         app->renderFrame();
-        
+
         if (app->fakeAudio)
             app->addFakePCM();
         processLoopbackFrame(app);
-        
+
 #if UNLOCK_FPS
         advanceUnlockedFPSCounterFrame(start);
 #else
@@ -67,14 +71,84 @@ static int mainLoop(void *userData) {
         last_time = SDL_GetTicks();
 #endif
     }
-    
+
     return 0;
 }
 
 int main(int argc, char *argv[]) {
-    projectMSDL *app = setupSDLApp();
-    
+    // Parse command-line arguments
+    std::string presetDir;
+    std::string audioFile;
+    std::string outDir;
+    size_t targetFps = 0;
+    std::vector<std::pair<int,int>> resolutions;
+    bool listPresets = false;
+
+    for (int i = 1; i < argc; ++i) {
+        std::string a(argv[i]);
+        if (a == "--preset-dir" && i + 1 < argc) {
+            presetDir = argv[++i];
+        } else if (a == "--audio" && i + 1 < argc) {
+            audioFile = argv[++i];
+        } else if (a == "--out-dir" && i + 1 < argc) {
+            outDir = argv[++i];
+        } else if (a == "--fps" && i + 1 < argc) {
+            targetFps = static_cast<size_t>(std::stoul(argv[++i]));
+        } else if (a == "--res" && i + 1 < argc) {
+            // one or multiple resolutions separated by commas, e.g. 1280x720,1920x1080
+            std::string r = argv[++i];
+            size_t pos = 0;
+            while (pos < r.size()) {
+                size_t comma = r.find(',', pos);
+                std::string token = (comma == std::string::npos) ? r.substr(pos) : r.substr(pos, comma - pos);
+                size_t x = token.find('x');
+                if (x != std::string::npos) {
+                    int w = std::stoi(token.substr(0, x));
+                    int h = std::stoi(token.substr(x + 1));
+                    resolutions.emplace_back(w, h);
+                }
+                if (comma == std::string::npos) break;
+                pos = comma + 1;
+            }
+        } else if (a == "--list-presets") {
+            listPresets = true;
+        } else if (a == "--help" || a == "-h") {
+            printf("Usage: %s [--preset-dir DIR] [--audio FILE] [--out-dir DIR] [--fps N] [--res WxH,...] [--list-presets]\n", argv[0]);
+            printf("Supported audio formats: WAV, OGG (with SDL_mixer)\n");
+            printf("Output format: JPEG\n");
+            return 0;
+        }
+    }
+
+    projectMSDL *app = setupSDLApp(presetDir);
+
+    // List presets if requested (use project's playlist API)
+    if (listPresets) {
+        auto presets = app->listPresets();
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Found %zu presets:\n", presets.size());
+        for (size_t i = 0; i < presets.size(); ++i) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "  %zu: %s", i, presets[i].c_str());
+        }
+    }
+
+    // Load provided audio file (WAV/OGG/MP3 via SDL_mixer fallback)
+    SDL_AudioSpec wavSpec;
+    Uint8* wavBuf = nullptr;
+    Uint32 wavLen = 0;
+    if (!audioFile.empty()) {
+        if (!loadAudioFile(audioFile, wavSpec, &wavBuf, &wavLen)) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to load audio file %s", audioFile.c_str());
+        } else {
+            app->configureCli(wavSpec, wavBuf, wavLen, outDir, targetFps, resolutions);
+            double seconds = 0.0;
+            if (wavSpec.freq > 0 && wavSpec.channels > 0)
+                seconds = (double)wavLen / (wavSpec.freq * wavSpec.channels * (SDL_AUDIO_BITSIZE(wavSpec.format)/8));
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Loaded audio: %s (%.2f sec)", audioFile.c_str(), seconds);
+        }
+    }
+
     int status = mainLoop(&app);
+
 
     // cleanup
     SDL_GL_DeleteContext(app->_openGlContext);
@@ -82,8 +156,10 @@ int main(int argc, char *argv[]) {
     if (!app->wasapi) // not currently using WASAPI, so we need to endAudioCapture.
         app->endAudioCapture();
 #endif
+    // free any loaded audio buffer (was allocated by loadAudioFile)
+    if (wavBuf) free(wavBuf);
     delete app;
-    
+
     return status;
 }
 

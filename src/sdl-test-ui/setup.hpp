@@ -22,7 +22,8 @@ void dumpOpenGLInfo();
 void initStereoscopicView(SDL_Window *win);
 void enableGLDebugOutput();
 void testAllPresets(projectMSDL *app);
-projectMSDL *setupSDLApp();
+// supply optional preset directory (empty => use DATADIR_PATH/presets)
+projectMSDL *setupSDLApp(const std::string& presetDir = "");
 int64_t startUnlockedFPSCounter();
 void advanceUnlockedFPSCounterFrame(int64_t startFrame);
 
