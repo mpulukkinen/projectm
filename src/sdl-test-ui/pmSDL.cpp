@@ -302,9 +302,12 @@ void projectMSDL::keyHandler(SDL_Event* sdl_evt)
                 } else {
                     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No audio provided for preview.\n");
                 }
-                break;
             }
-
+            else
+            {
+                is_previewing = false;
+            }
+            break;
 
         case SDLK_F6:
             // Render sequence
@@ -319,38 +322,8 @@ void projectMSDL::keyHandler(SDL_Event* sdl_evt)
                     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Render parameters missing (audio/out-dir/resolutions).\n");
                 }
             }
-
             break;
-
     }
-}
-
-void projectMSDL::addFakePCM()
-{
-    int i;
-    int16_t pcm_data[2 * 512];
-    /** Produce some fake PCM data to stuff into projectM */
-    for (i = 0; i < 512; i++)
-    {
-        if (i % 2 == 0)
-        {
-            pcm_data[2 * i] = (float) (rand() / ((float) RAND_MAX) * (pow(2, 14)));
-            pcm_data[2 * i + 1] = (float) (rand() / ((float) RAND_MAX) * (pow(2, 14)));
-        }
-        else
-        {
-            pcm_data[2 * i] = (float) (rand() / ((float) RAND_MAX) * (pow(2, 14)));
-            pcm_data[2 * i + 1] = (float) (rand() / ((float) RAND_MAX) * (pow(2, 14)));
-        }
-        if (i % 2 == 1)
-        {
-            pcm_data[2 * i] = -pcm_data[2 * i];
-            pcm_data[2 * i + 1] = -pcm_data[2 * i + 1];
-        }
-    }
-
-    /** Add the waveform data */
-    projectm_pcm_add_int16(_projectM, pcm_data, 512, PROJECTM_STEREO);
 }
 
 void projectMSDL::resize(unsigned int width_, unsigned int height_)
@@ -486,9 +459,37 @@ void projectMSDL::renderFrame()
         ImGui::Separator();
         ImGui::Text("Presets:");
         auto presets = listPresets();
-        size_t show = presets.size();
-        for (size_t i = 0; i < show; ++i) {
-            ImGui::BulletText("%zu: %s", i, presets[i].c_str());
+        size_t total = presets.size();
+        const int columns = 3;
+        if (total > 0) {
+            // You can set a fixed width for the entire table.
+            // For example, if you estimate a character is ~8 pixels wide, 100 chars would be ~800 pixels.
+            int width = 600;
+            float table_width = columns * width; // A rough estimation for width
+
+            ImGui::PushItemWidth(table_width);
+
+            // Using ImGuiTableFlags_SizingStretchSame ensures all columns are equal.
+            if (ImGui::BeginTable("preset_table", columns, ImGuiTableFlags_SizingStretchSame)) {
+                int rows = static_cast<int>((total + columns - 1) / columns);
+
+                for (int r = 0; r < rows; ++r) {
+                    ImGui::TableNextRow();
+                    for (int c = 0; c < columns; ++c) {
+                        ImGui::TableSetColumnIndex(c);
+                        size_t idx = static_cast<size_t>(r) + static_cast<size_t>(c) * static_cast<size_t>(rows);
+
+                        if (idx < total) {
+                            // Example with text wrapping
+                            ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + width);
+                            ImGui::Text("%zu: %s", idx, presets[idx].c_str());
+                            ImGui::PopTextWrapPos();
+                        }
+                    }
+                }
+                ImGui::EndTable();
+            }
+            ImGui::PopItemWidth();
         }
         ImGui::End();
 

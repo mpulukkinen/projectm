@@ -127,7 +127,6 @@ public:
     void pollEvent();
     bool keymod = false;
     std::string getActivePresetName();
-    void addFakePCM();
     projectm_handle projectM();
     void setFps(size_t fps);
     size_t fps() const;

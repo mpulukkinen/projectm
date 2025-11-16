@@ -56,9 +56,6 @@ static int mainLoop(void *userData) {
     while (! app->done) {
         // render
         app->renderFrame();
-
-        if (app->fakeAudio)
-            app->addFakePCM();
         processLoopbackFrame(app);
 
 #if UNLOCK_FPS
