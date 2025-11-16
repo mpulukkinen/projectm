@@ -31,6 +31,12 @@
 #include "pmSDL.hpp"
 
 #include <vector>
+#include <thread>
+#include <chrono>
+#include <filesystem>
+#include <cstring>
+#include "stb_image_write.h"
+#include "text_render.h"
 
 namespace {
 auto dispatchLoadProc(const char* name, void* userData) -> void*
@@ -277,6 +283,26 @@ void projectMSDL::keyHandler(SDL_Event* sdl_evt)
             UpdateWindowTitle();
             break;
 
+        case SDLK_F5:
+            // Preview audio
+            if (this->cli_has_audio && this->cli_audio_buf && this->cli_audio_len > 0) {
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Previewing audio (F5)\n");
+                previewAudioAndFeed(this->cli_audio_spec, this->cli_audio_buf, this->cli_audio_len);
+            } else {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No audio provided for preview.\n");
+            }
+            break;
+
+        case SDLK_F6:
+            // Render sequence
+            if (this->cli_has_audio && this->cli_audio_buf && this->cli_audio_len > 0 && !this->cli_out_dir.empty() && !this->cli_resolutions.empty()) {
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Starting render (F6) to %s\n", this->cli_out_dir.c_str());
+                renderSequenceFromAudio(this->cli_audio_spec, this->cli_audio_buf, this->cli_audio_len, this->cli_out_dir, this->cli_render_fps ? this->cli_render_fps : this->fps(), this->cli_resolutions);
+            } else {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Render parameters missing (audio/out-dir/resolutions).\n");
+            }
+            break;
+
     }
 }
 
@@ -359,6 +385,29 @@ void projectMSDL::pollEvent()
             case SDL_MOUSEBUTTONDOWN:
                 if (evt.button.button == SDL_BUTTON_LEFT)
                 {
+                    // Check for clicks in top-left control regions (buttons)
+                    int bx = evt.button.x;
+                    int by = evt.button.y;
+                    // Preview button region: x:[8..168], y:[8..40]
+                    if (bx >= 8 && bx <= 168 && by >= 8 && by <= 40) {
+                        if (this->cli_has_audio && this->cli_audio_buf && this->cli_audio_len > 0) {
+                            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Preview button clicked");
+                            previewAudioAndFeed(this->cli_audio_spec, this->cli_audio_buf, this->cli_audio_len);
+                        } else {
+                            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Preview clicked but no audio provided");
+                        }
+                        break;
+                    }
+                    // Render button region: x:[176..336], y:[8..40]
+                    if (bx >= 176 && bx <= 336 && by >= 8 && by <= 40) {
+                        if (this->cli_has_audio && this->cli_audio_buf && this->cli_audio_len > 0 && !this->cli_out_dir.empty() && !this->cli_resolutions.empty()) {
+                            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Render button clicked");
+                            renderSequenceFromAudio(this->cli_audio_spec, this->cli_audio_buf, this->cli_audio_len, this->cli_out_dir, this->cli_render_fps ? this->cli_render_fps : this->fps(), this->cli_resolutions);
+                        } else {
+                            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Render clicked but parameters missing");
+                        }
+                        break;
+                    }
                     // if it's the first mouse down event (since mouse up or since SDL was launched)
                     if (!mouseDown)
                     {
@@ -452,6 +501,34 @@ void projectMSDL::renderFrame()
 
     projectm_opengl_render_frame(_projectM);
 
+    // Draw overlay UI (buttons)
+    // Preview button
+    SDL_Color white{255,255,255,255};
+    int tw=0, th=0;
+    GLuint t1 = 0, t2 = 0;
+    t1 = text_create_texture("Preview (F5)", &tw, &th, white);
+    if (t1) {
+        // background rect
+        glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity(); int vp[4]; glGetIntegerv(GL_VIEWPORT, vp); glOrtho(0, vp[2], vp[3], 0, -1, 1);
+        glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
+        glColor4f(0.1f, 0.1f, 0.1f, 0.6f);
+        glBegin(GL_QUADS); glVertex2i(6, 6); glVertex2i(6 + tw + 8, 6); glVertex2i(6 + tw + 8, 6 + th + 4); glVertex2i(6, 6 + th + 4); glEnd();
+        glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW);
+        text_draw_texture(t1, 10, 8, tw, th);
+        text_free_texture(t1);
+    }
+    // Render button
+    t2 = text_create_texture("Render (F6)", &tw, &th, white);
+    if (t2) {
+        glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity(); int vp2[4]; glGetIntegerv(GL_VIEWPORT, vp2); glOrtho(0, vp2[2], vp2[3], 0, -1, 1);
+        glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
+        glColor4f(0.1f, 0.1f, 0.1f, 0.6f);
+        glBegin(GL_QUADS); glVertex2i(174, 6); glVertex2i(174 + tw + 8, 6); glVertex2i(174 + tw + 8, 6 + th + 4); glVertex2i(174, 6 + th + 4); glEnd();
+        glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW);
+        text_draw_texture(t2, 178, 8, tw, th);
+        text_free_texture(t2);
+    }
+
     SDL_GL_SwapWindow(_sdlWindow);
 }
 
@@ -505,6 +582,31 @@ size_t projectMSDL::fps() const
     return _fps;
 }
 
+void projectMSDL::configureCli(const SDL_AudioSpec& audioSpec, Uint8* audioBuf, Uint32 audioLen,
+                               const std::string& outDir, size_t renderFps, const std::vector<std::pair<int,int>>& resolutions) {
+    cli_audio_spec = audioSpec;
+    cli_audio_buf = audioBuf;
+    cli_audio_len = audioLen;
+    cli_out_dir = outDir;
+    cli_render_fps = renderFps;
+    cli_resolutions = resolutions;
+    cli_has_audio = (audioBuf != nullptr && audioLen > 0);
+}
+
+std::vector<std::string> projectMSDL::listPresets() {
+    std::vector<std::string> out;
+    if (!_playlist) return out;
+    uint32_t size = projectm_playlist_size(_playlist);
+    for (uint32_t i = 0; i < size; ++i) {
+        char* p = projectm_playlist_item(_playlist, i);
+        if (p) {
+            out.emplace_back(p);
+            projectm_playlist_free_string(p);
+        }
+    }
+    return out;
+}
+
 void projectMSDL::UpdateWindowTitle()
 {
     std::string title = "projectM ➫ " + _presetName;
@@ -513,4 +615,149 @@ void projectMSDL::UpdateWindowTitle()
         title.append(" [locked]");
     }
     SDL_SetWindowTitle(_sdlWindow, title.c_str());
+}
+
+// Helper: feed a chunk of PCM (interleaved) to projectM as int16 samples
+static void feedPCMToProjectM(projectm_handle projectM, const Uint8* buf, Uint32 len, const SDL_AudioSpec& spec) {
+    if (!buf || len == 0) return;
+
+    int channels = spec.channels;
+    SDL_AudioFormat fmt = spec.format;
+
+    // Only handle S16 and F32 here. Convert as necessary.
+    if (fmt == AUDIO_S16SYS) {
+        // len is bytes; samplesPerChannel = len / (2*channels)
+        int16_t* samples = (int16_t*)buf;
+        size_t samplesPerChannel = len / (2 * channels);
+        // projectm expects interleaved int16 with sample count (per channel)
+        projectm_pcm_add_int16(projectM, samples, static_cast<int>(samplesPerChannel), channels == 2 ? PROJECTM_STEREO : PROJECTM_MONO);
+    } else if (fmt == AUDIO_F32SYS) {
+        // convert float to int16
+        const float* f = (const float*)buf;
+        size_t frames = len / (4 * channels);
+        std::vector<int16_t> tmp(frames * channels);
+        for (size_t i = 0; i < frames * channels; ++i) {
+            float v = f[i];
+            if (v > 1.0f) v = 1.0f;
+            if (v < -1.0f) v = -1.0f;
+            tmp[i] = static_cast<int16_t>(v * 32767.0f);
+        }
+        projectm_pcm_add_int16(projectM, tmp.data(), static_cast<int>(frames), channels == 2 ? PROJECTM_STEREO : PROJECTM_MONO);
+    } else if (fmt == AUDIO_U8) {
+        // unsigned 8-bit, convert to signed int16
+        size_t frames = len / channels;
+        std::vector<int16_t> tmp(frames * channels);
+        for (size_t i = 0; i < frames * channels; ++i) {
+            tmp[i] = static_cast<int16_t>(((int)buf[i] - 128) << 8);
+        }
+        projectm_pcm_add_int16(projectM, tmp.data(), static_cast<int>(frames), channels == 2 ? PROJECTM_STEREO : PROJECTM_MONO);
+    } else {
+        // Unsupported format
+    }
+}
+
+void projectMSDL::previewAudioAndFeed(const SDL_AudioSpec& audioSpec, const Uint8* audioBuf, Uint32 audioLen) {
+    // Spawn a thread to progressively feed audio to projectM and optionally play via SDL audio
+    std::thread([this, audioSpec, audioBuf, audioLen]() {
+        // Try to open an audio device for playback
+        SDL_AudioSpec want = audioSpec;
+        SDL_AudioSpec have;
+        SDL_AudioDeviceID dev = 0;
+        if (SDL_WasInit(SDL_INIT_AUDIO) == 0) {
+            SDL_Init(SDL_INIT_AUDIO);
+        }
+        dev = SDL_OpenAudioDevice(nullptr, 0, &want, &have, 0);
+        if (dev != 0) {
+            SDL_PauseAudioDevice(dev, 0);
+            SDL_QueueAudio(dev, audioBuf, audioLen);
+        }
+
+        // Feed audio progressively per frame
+        double seconds = (double)audioLen / (audioSpec.freq * audioSpec.channels * (SDL_AUDIO_BITSIZE(audioSpec.format)/8));
+        size_t totalFrames = static_cast<size_t>(seconds * this->fps());
+        if (totalFrames == 0) totalFrames = 1;
+
+        // bytes per second
+        Uint32 bytesPerSec = audioSpec.freq * audioSpec.channels * (SDL_AUDIO_BITSIZE(audioSpec.format)/8);
+        double bytesPerFrame = (double)bytesPerSec / (double)this->fps();
+
+        const Uint8* ptr = audioBuf;
+        Uint32 remaining = audioLen;
+
+        for (size_t f = 0; f < totalFrames && remaining > 0 && !done; ++f) {
+            Uint32 take = static_cast<Uint32>(std::min<double>((double)remaining, bytesPerFrame));
+            feedPCMToProjectM(this->_projectM, ptr, take, audioSpec);
+            ptr += take;
+            remaining -= take;
+            SDL_Delay(static_cast<Uint32>(1000.0 / this->fps()));
+        }
+
+        // let playback finish
+        if (dev != 0) {
+            SDL_Delay(500);
+            SDL_CloseAudioDevice(dev);
+        }
+    }).detach();
+}
+
+void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const Uint8* audioBuf, Uint32 audioLen,
+                                 const std::string& outDir, size_t fps, const std::vector<std::pair<int,int>>& resolutions) {
+    if (!std::filesystem::exists(outDir)) {
+        std::error_code ec;
+        std::filesystem::create_directories(outDir, ec);
+    }
+
+    // Compute total frames from audio length
+    double seconds = (double)audioLen / (audioSpec.freq * audioSpec.channels * (SDL_AUDIO_BITSIZE(audioSpec.format)/8));
+    size_t totalFrames = static_cast<size_t>(seconds * fps);
+    if (totalFrames == 0) totalFrames = 1;
+
+    Uint32 bytesPerSec = audioSpec.freq * audioSpec.channels * (SDL_AUDIO_BITSIZE(audioSpec.format)/8);
+    double bytesPerFrame = (double)bytesPerSec / (double)fps;
+
+    const Uint8* ptr = audioBuf;
+    Uint32 remaining = audioLen;
+
+    // For each frame, feed audio slice and render for each resolution
+    for (size_t frameIndex = 0; frameIndex < totalFrames && !done; ++frameIndex) {
+        Uint32 take = static_cast<Uint32>(std::min<double>((double)remaining, bytesPerFrame));
+        if (take > 0) {
+            feedPCMToProjectM(this->_projectM, ptr, take, audioSpec);
+            ptr += take;
+            remaining -= take;
+        }
+
+        for (const auto &res : resolutions) {
+            int w = res.first;
+            int h = res.second;
+            // resize window/render target
+            this->resize(w, h);
+            // render
+            glViewport(0,0,w,h);
+            glClearColor(0,0,0,0);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            projectm_opengl_render_frame(_projectM);
+
+            // read pixels
+            std::vector<unsigned char> pixels(w * h * 3);
+            glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
+
+            // flip vertically because GL origin is bottom-left
+            std::vector<unsigned char> flipped(w * h * 3);
+            for (int y = 0; y < h; ++y) {
+                memcpy(&flipped[(h - 1 - y) * w * 3], &pixels[y * w * 3], w * 3);
+            }
+
+            // write JPEG using stb_image_write
+            char filename[1024];
+            snprintf(filename, sizeof(filename), "%s/frame_%dx%d_%06zu.jpg", outDir.c_str(), w, h, frameIndex);
+            int quality = 90;
+            int comp = 3;
+            if (!stbi_write_jpg(filename, w, h, comp, flipped.data(), quality)) {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to write JPEG: %s", filename);
+            }
+        }
+    }
+
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Render complete. %zu frames written to %s", totalFrames, outDir.c_str());
 }

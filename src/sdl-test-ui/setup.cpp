@@ -159,7 +159,7 @@ void logMessage(const char* message, projectm_log_level severity, void* userData
 }
 
 // initialize SDL, openGL, config
-projectMSDL *setupSDLApp() {
+projectMSDL *setupSDLApp(const std::string& presetDir) {
     projectMSDL *app;
     seedRand();
 
@@ -230,7 +230,9 @@ projectMSDL *setupSDLApp() {
 
     // load configuration file
     std::string configFilePath = getConfigFilePath(base_path);
-    std::string presetURL = base_path + "/presets";
+    std::string presetURL = presetDir.empty() ? (base_path + "/presets") : presetDir;
+
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Using preset directory: %s\n", presetURL.c_str());
 
     app = new projectMSDL(glCtx, presetURL);
 

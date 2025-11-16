@@ -19,8 +19,8 @@
 *
 * projectM-sdl
 * This is an implementation of projectM using libSDL2
-* 
-* pmSDL.hpp 
+*
+* pmSDL.hpp
 * Authors: Created by Mischa Spiegelmock on 2017-09-18.
 *
 */
@@ -48,7 +48,6 @@
 #include "loopback.hpp"
 #include "setup.hpp"
 
-
 #if defined _MSC_VER
 #include <direct.h>
 #endif
@@ -61,12 +60,12 @@
 #include <sys/stat.h>
 
 #ifdef WASAPI_LOOPBACK
-#include <windows.h>
-#include <mmdeviceapi.h>
 #include <audioclient.h>
+#include <mmdeviceapi.h>
+#include <windows.h>
 
-#include <functiondiscoverykeys_devpkey.h>
 #include <avrt.h>
+#include <functiondiscoverykeys_devpkey.h>
 
 #include <mmsystem.h>
 #include <stdio.h>
@@ -83,7 +82,7 @@
 #else
 #include <SDL2/SDL.h>
 #endif /** _WIN32 */
-
+#include <vector>
 
 // DATADIR_PATH should be set by the root Makefile if this is being
 // built with autotools.
@@ -105,7 +104,6 @@
 
 class projectMSDL
 {
-
 public:
     projectMSDL(SDL_GLContext glCtx, const std::string& presetPath);
 
@@ -133,6 +131,23 @@ public:
     projectm_handle projectM();
     void setFps(size_t fps);
     size_t fps() const;
+
+    // configure CLI-supplied audio/render parameters
+    void configureCli(const SDL_AudioSpec& audioSpec, Uint8* audioBuf, Uint32 audioLen,
+                      const std::string& outDir, size_t renderFps, const std::vector<std::pair<int, int>>& resolutions);
+
+    // return a list of preset filenames discovered in the playlist
+    std::vector<std::string> listPresets();
+
+    // Preview audio (play) and feed projectM with PCM data for visualization
+    // audioSpec/data: SDL spec and raw audio data (WAV loaded via SDL_LoadWAV)
+    void previewAudioAndFeed(const SDL_AudioSpec& audioSpec, const Uint8* audioBuf, Uint32 audioLen);
+
+    // Render frames driven by provided audio buffer and write BMP sequence to outDir
+    // resolutions: vector of pair(width,height)
+    // fps: target frames per second
+    void renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const Uint8* audioBuf, Uint32 audioLen,
+                                 const std::string& outDir, size_t fps, const std::vector<std::pair<int, int>>& resolutions);
 
     bool done{false};
     bool mouseDown{false};
@@ -171,4 +186,12 @@ private:
     int _selectedAudioDevice{0};
 
     std::string _presetName; //!< Current preset name
+    // CLI-provided audio and render options (set by main)
+    SDL_AudioSpec cli_audio_spec;
+    Uint8* cli_audio_buf{nullptr};
+    Uint32 cli_audio_len{0};
+    std::string cli_out_dir;
+    size_t cli_render_fps{0};
+    std::vector<std::pair<int, int>> cli_resolutions;
+    bool cli_has_audio{false};
 };

@@ -7,6 +7,9 @@ add_executable(projectM-Test-UI
         ConfigFile.h
         audioCapture.cpp
         audioCapture.hpp
+        audio_loader.cpp
+        text_render.cpp
+        stb_image_write_impl.cpp
         loopback.cpp
         loopback.hpp
         pmSDL.cpp
