@@ -35,6 +35,7 @@
 #include <chrono>
 #include <filesystem>
 #include <cstring>
+#include <string>
 #include "stb_image_write.h"
 #include "text_render.h"
 // Dear ImGui
@@ -396,74 +397,8 @@ void projectMSDL::pollEvent()
                         break;
                 }
                 break;
-            case SDL_MOUSEWHEEL:
-                scrollHandler(&evt);
-
             case SDL_KEYDOWN:
                 keyHandler(&evt);
-                break;
-
-            case SDL_MOUSEBUTTONDOWN:
-                if (evt.button.button == SDL_BUTTON_LEFT)
-                {
-                    // Check for clicks in top-left control regions (buttons)
-                    int bx = evt.button.x;
-                    int by = evt.button.y;
-                    // Preview button region: x:[8..168], y:[8..40]
-                    if (bx >= 8 && bx <= 168 && by >= 8 && by <= 40) {
-                        if (this->cli_has_audio && this->cli_audio_buf && this->cli_audio_len > 0) {
-                            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Preview button clicked");
-                            previewAudioAndFeed(this->cli_audio_spec, this->cli_audio_buf, this->cli_audio_len);
-                        } else {
-                            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Preview clicked but no audio provided");
-                        }
-                        break;
-                    }
-                    // Render button region: x:[176..336], y:[8..40]
-                    if (bx >= 176 && bx <= 336 && by >= 8 && by <= 40) {
-                        if (this->cli_has_audio && this->cli_audio_buf && this->cli_audio_len > 0 && !this->cli_out_dir.empty() && !this->cli_resolutions.empty()) {
-                            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Render button clicked");
-                            renderSequenceFromAudio(this->cli_audio_spec, this->cli_audio_buf, this->cli_audio_len, this->cli_out_dir, this->cli_render_fps ? this->cli_render_fps : this->fps(), this->cli_resolutions);
-                        } else {
-                            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Render clicked but parameters missing");
-                        }
-                        break;
-                    }
-                    // if it's the first mouse down event (since mouse up or since SDL was launched)
-                    if (!mouseDown)
-                    {
-                        // Get mouse coorindates when you click.
-                        SDL_GetMouseState(&mousex, &mousey);
-                        // Scale those coordinates. libProjectM supports a scale of 0.1 instead of absolute pixel coordinates.
-                        mousexscale = (mousex / (float) _width);
-                        mouseyscale = ((_height - mousey) / (float) _height);
-                        // Touch. By not supplying a touch type, we will default to random.
-                        touch(mousexscale, mouseyscale, mousepressure);
-                        mouseDown = true;
-                    }
-                }
-                else if (evt.button.button == SDL_BUTTON_RIGHT)
-                {
-                    mouseDown = false;
-
-                    // Keymod = Left or Right Gui or Left Ctrl. This is a shortcut to remove all waveforms.
-                    if (keymod)
-                    {
-                        touchDestroyAll();
-                        keymod = false;
-                        break;
-                    }
-
-                    // Right Click
-                    SDL_GetMouseState(&mousex, &mousey);
-
-                    // Scale those coordinates. libProjectM supports a scale of 0.1 instead of absolute pixel coordinates.
-                    mousexscale = (mousex / (float) _width);
-                    mouseyscale = ((_height - mousey) / (float) _height);
-
-                    // Destroy at the coordinates we clicked.
-                    touchDestroy(mousexscale, mouseyscale);
-                }
                 break;
 
             case SDL_MOUSEBUTTONUP:
@@ -530,7 +465,7 @@ void projectMSDL::renderFrame()
         ImGui::NewFrame();
 
         ImGui::SetNextWindowBgAlpha(0.65f);
-        ImGui::Begin("projectM Overlay", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize);
+        ImGui::Begin("projectM Overlay", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
         ImGui::TextWrapped("Hotkeys:");
         ImGui::BulletText("Ctrl + Q: Quit");
         ImGui::BulletText("Ctrl/Cmd+S: Stretch monitors");
@@ -551,8 +486,7 @@ void projectMSDL::renderFrame()
         ImGui::Separator();
         ImGui::Text("Presets:");
         auto presets = listPresets();
-        int maxPresets = 60;
-        size_t show = presets.size() > maxPresets ? maxPresets : presets.size();
+        size_t show = presets.size();
         for (size_t i = 0; i < show; ++i) {
             ImGui::BulletText("%zu: %s", i, presets[i].c_str());
         }
@@ -662,7 +596,16 @@ std::vector<std::string> projectMSDL::listPresets() {
     for (uint32_t i = 0; i < size; ++i) {
         char* p = projectm_playlist_item(_playlist, i);
         if (p) {
-            out.emplace_back(p);
+            std::string fullPath(p);
+            // Find the last occurrence of a path separator
+            size_t last_separator = fullPath.find_last_of("/\\");
+            if (last_separator != std::string::npos) {
+                // Extract the filename part
+                out.emplace_back(fullPath.substr(last_separator + 1));
+            } else {
+                // No separator found, the whole string is the filename
+                out.emplace_back(fullPath);
+            }
             projectm_playlist_free_string(p);
         }
     }
