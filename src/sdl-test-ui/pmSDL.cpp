@@ -489,7 +489,9 @@ void projectMSDL::renderFrame()
                             ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + width);
                             // Use a unique ID per item to avoid collisions in ImGui
                             ImGui::PushID(static_cast<int>(idx));
-                            if (ImGui::Selectable(display.c_str(), false, 0, ImVec2((float)width, 0.0f))) {
+                            uint32_t current_pos = projectm_playlist_get_position(_playlist);
+                            bool is_selected = (static_cast<size_t>(current_pos) == idx);
+                            if (ImGui::Selectable(display.c_str(), is_selected, 0, ImVec2((float)width, 0.0f))) {
                                 // User clicked this preset: switch playlist position (hard cut)
                                 projectm_playlist_set_position(_playlist, static_cast<uint32_t>(idx), true);
                                 // Update window title to reflect newly selected preset
