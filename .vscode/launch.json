@@ -1,0 +1,26 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "projectM-Test-UI",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/out/src/sdl-test-ui/Debug/projectM-Test-UI.exe",
+            "args": [
+                "--preset-dir",
+                "C:\\Users\\copyhere2\\Downloads\\projectMSDL-Windows-x64-2.0-pre3\\projectMSDL\\presets",
+                "--audio",
+                "P:\\Albums\\Virtuality\\3.HallofHeroes.wav",
+                "--fps",
+                "30",
+                "--res",
+                "1920x1080"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "integratedTerminal",
+            "MIMode": "gdb"
+        }
+    ]
+}
