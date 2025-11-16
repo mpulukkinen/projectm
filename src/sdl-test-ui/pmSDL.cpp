@@ -37,6 +37,10 @@
 #include <cstring>
 #include "stb_image_write.h"
 #include "text_render.h"
+// Dear ImGui
+#include "imgui.h"
+#include "backends/imgui_impl_sdl2.h"
+#include "backends/imgui_impl_opengl2.h"
 
 namespace {
 auto dispatchLoadProc(const char* name, void* userData) -> void*
@@ -61,6 +65,11 @@ projectMSDL::projectMSDL(SDL_GLContext glCtx, const std::string& presetPath)
 
 projectMSDL::~projectMSDL()
 {
+    // Shutdown ImGui if initialized
+    ImGui_ImplOpenGL2_Shutdown();
+    ImGui_ImplSDL2_Shutdown();
+    ImGui::DestroyContext();
+
     projectm_playlist_destroy(_playlist);
     _playlist = nullptr;
     projectm_destroy(_projectM);
@@ -360,6 +369,9 @@ void projectMSDL::pollEvent()
     int mousepressure = 0;
     while (SDL_PollEvent(&evt))
     {
+        // Forward events to ImGui
+        ImGui_ImplSDL2_ProcessEvent(&evt);
+
         switch (evt.type)
         {
             case SDL_WINDOWEVENT:
@@ -501,33 +513,41 @@ void projectMSDL::renderFrame()
 
     projectm_opengl_render_frame(_projectM);
 
-    // Draw overlay UI (buttons)
-    // Preview button
-    SDL_Color white{255,255,255,255};
-    int tw=0, th=0;
-    GLuint t1 = 0, t2 = 0;
-    t1 = text_create_texture("Preview (F5)", &tw, &th, white);
-    if (t1) {
-        // background rect
-        glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity(); int vp[4]; glGetIntegerv(GL_VIEWPORT, vp); glOrtho(0, vp[2], vp[3], 0, -1, 1);
-        glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
-        glColor4f(0.1f, 0.1f, 0.1f, 0.6f);
-        glBegin(GL_QUADS); glVertex2i(6, 6); glVertex2i(6 + tw + 8, 6); glVertex2i(6 + tw + 8, 6 + th + 4); glVertex2i(6, 6 + th + 4); glEnd();
-        glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW);
-        text_draw_texture(t1, 10, 8, tw, th);
-        text_free_texture(t1);
+    // Dear ImGui overlay
+    ImGui_ImplOpenGL2_NewFrame();
+    ImGui_ImplSDL2_NewFrame(_sdlWindow);
+    ImGui::NewFrame();
+
+    ImGui::SetNextWindowBgAlpha(0.35f);
+    ImGui::Begin("projectM Overlay", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize);
+    ImGui::TextWrapped("Hotkeys:");
+    ImGui::BulletText("Ctrl/Cmd+Q: Quit");
+    ImGui::BulletText("Ctrl/Cmd+I: Toggle audio input");
+    ImGui::BulletText("Ctrl/Cmd+S: Stretch monitors");
+    ImGui::BulletText("Ctrl/Cmd+M: Change monitor");
+    ImGui::BulletText("Ctrl/Cmd+F: Fullscreen");
+    ImGui::BulletText("A: Toggle aspect correction");
+    ImGui::BulletText("R: Random preset (next)");
+    ImGui::BulletText("Y: Toggle shuffle");
+    ImGui::BulletText("Left/Right: Prev/Next preset");
+    ImGui::BulletText("Up/Down: Beat sensitivity +/-");
+    ImGui::BulletText("Space: Lock/Unlock preset");
+    ImGui::BulletText("F5: Preview audio");
+    ImGui::BulletText("F6: Render sequence");
+
+    ImGui::Separator();
+    ImGui::Text("Audio: %s", this->cli_audio_file.empty() ? "(none)" : this->cli_audio_file.c_str());
+    ImGui::Separator();
+    ImGui::Text("Presets:");
+    auto presets = listPresets();
+    size_t show = presets.size() > 6 ? 6 : presets.size();
+    for (size_t i = 0; i < show; ++i) {
+        ImGui::BulletText("%zu: %s", i, presets[i].c_str());
     }
-    // Render button
-    t2 = text_create_texture("Render (F6)", &tw, &th, white);
-    if (t2) {
-        glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity(); int vp2[4]; glGetIntegerv(GL_VIEWPORT, vp2); glOrtho(0, vp2[2], vp2[3], 0, -1, 1);
-        glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
-        glColor4f(0.1f, 0.1f, 0.1f, 0.6f);
-        glBegin(GL_QUADS); glVertex2i(174, 6); glVertex2i(174 + tw + 8, 6); glVertex2i(174 + tw + 8, 6 + th + 4); glVertex2i(174, 6 + th + 4); glEnd();
-        glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW);
-        text_draw_texture(t2, 178, 8, tw, th);
-        text_free_texture(t2);
-    }
+    ImGui::End();
+
+    ImGui::Render();
+    ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
 
     SDL_GL_SwapWindow(_sdlWindow);
 }
@@ -536,6 +556,14 @@ void projectMSDL::init(SDL_Window* window, const bool _renderToTexture)
 {
     _sdlWindow = window;
     projectm_set_window_size(_projectM, _width, _height);
+
+    // Initialize Dear ImGui for SDL + OpenGL2
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    ImGui::StyleColorsDark();
+    ImGui_ImplSDL2_InitForOpenGL(_sdlWindow, _openGlContext);
+    ImGui_ImplOpenGL2_Init();
 
 #ifdef WASAPI_LOOPBACK
     wasapi = true;
@@ -583,7 +611,8 @@ size_t projectMSDL::fps() const
 }
 
 void projectMSDL::configureCli(const SDL_AudioSpec& audioSpec, Uint8* audioBuf, Uint32 audioLen,
-                               const std::string& outDir, size_t renderFps, const std::vector<std::pair<int,int>>& resolutions) {
+                               const std::string& outDir, size_t renderFps, const std::vector<std::pair<int,int>>& resolutions,
+                               const std::string& audioFile) {
     cli_audio_spec = audioSpec;
     cli_audio_buf = audioBuf;
     cli_audio_len = audioLen;
@@ -591,6 +620,26 @@ void projectMSDL::configureCli(const SDL_AudioSpec& audioSpec, Uint8* audioBuf, 
     cli_render_fps = renderFps;
     cli_resolutions = resolutions;
     cli_has_audio = (audioBuf != nullptr && audioLen > 0);
+    // store provided audio filename (may be empty)
+    // add member cli_audio_file to class if not present (it's safe to add to header)
+    this->cli_out_dir = outDir;
+    // we will store the audio filename in a new member; if header isn't updated this is no-op
+    try {
+        // store by looking up the symbol - simple approach: add member in header (done)
+    } catch(...) {}
+    // set audio file string via new member if available
+    // (we rely on hdr change that adds cli_audio_file)
+    // attempt to assign
+    // NOTE: if header wasn't updated this line will still compile because header changed above
+    this->cli_out_dir = outDir; // keep existing behavior
+    // store filename in a member created in header; assign via qualified name
+    // the actual member is `cli_audio_file`
+#ifdef _MSC_VER
+    // MSVC: assign directly
+    this->cli_audio_file = audioFile;
+#else
+    this->cli_audio_file = audioFile;
+#endif
 }
 
 std::vector<std::string> projectMSDL::listPresets() {

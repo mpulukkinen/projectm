@@ -134,7 +134,8 @@ public:
 
     // configure CLI-supplied audio/render parameters
     void configureCli(const SDL_AudioSpec& audioSpec, Uint8* audioBuf, Uint32 audioLen,
-                      const std::string& outDir, size_t renderFps, const std::vector<std::pair<int, int>>& resolutions);
+                      const std::string& outDir, size_t renderFps, const std::vector<std::pair<int, int>>& resolutions,
+                      const std::string& audioFile = "");
 
     // return a list of preset filenames discovered in the playlist
     std::vector<std::string> listPresets();
@@ -191,6 +192,7 @@ private:
     Uint8* cli_audio_buf{nullptr};
     Uint32 cli_audio_len{0};
     std::string cli_out_dir;
+    std::string cli_audio_file; //!< optional audio filename passed from CLI
     size_t cli_render_fps{0};
     std::vector<std::pair<int, int>> cli_resolutions;
     bool cli_has_audio{false};

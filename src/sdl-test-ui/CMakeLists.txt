@@ -8,7 +8,6 @@ add_executable(projectM-Test-UI
         audioCapture.cpp
         audioCapture.hpp
         audio_loader.cpp
-        text_render.cpp
         stb_image_write_impl.cpp
         loopback.cpp
         loopback.hpp
@@ -28,6 +27,30 @@ target_link_libraries(projectM-Test-UI
         ${CMAKE_DL_LIBS}
         glad
         )
+
+# Integrate Dear ImGui via FetchContent and compile its sources into this target
+include(FetchContent)
+FetchContent_Declare(
+        imgui
+        GIT_REPOSITORY https://github.com/ocornut/imgui.git
+        GIT_TAG v1.89.8
+)
+FetchContent_MakeAvailable(imgui)
+
+if (imgui_POPULATED)
+    message(STATUS "Adding Dear ImGui sources to projectM-Test-UI")
+    set(IMGUI_SOURCES
+            ${imgui_SOURCE_DIR}/imgui.cpp
+            ${imgui_SOURCE_DIR}/imgui_demo.cpp
+            ${imgui_SOURCE_DIR}/imgui_draw.cpp
+            ${imgui_SOURCE_DIR}/imgui_tables.cpp
+            ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+            ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
+            ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl2.cpp
+    )
+    target_sources(projectM-Test-UI PRIVATE ${IMGUI_SOURCES})
+    target_include_directories(projectM-Test-UI PRIVATE ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+endif()
 
 if(MSVC)
     if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")

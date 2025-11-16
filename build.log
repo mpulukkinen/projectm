@@ -1,0 +1,14 @@
+MSBuild version 17.14.23+b0019275e for .NET Framework
+
+  Audio.vcxproj -> T:\CodeProjects\projectm\out\src\libprojectM\Audio\Audio.dir\Debug\Audio.lib
+  hlslparser.vcxproj -> T:\CodeProjects\projectm\out\vendor\hlslparser\hlslparser.dir\Debug\hlslparser.lib
+  MilkdropPreset.vcxproj -> T:\CodeProjects\projectm\out\src\libprojectM\MilkdropPreset\MilkdropPreset.dir\Debug\MilkdropPreset.lib
+  SOIL2.vcxproj -> T:\CodeProjects\projectm\out\vendor\SOIL2\SOIL2.dir\Debug\SOIL2.lib
+  Renderer.vcxproj -> T:\CodeProjects\projectm\out\src\libprojectM\Renderer\Renderer.dir\Debug\Renderer.lib
+  UserSprites.vcxproj -> T:\CodeProjects\projectm\out\src\libprojectM\UserSprites\UserSprites.dir\Debug\UserSprites.lib
+  projectM_main.vcxproj -> T:\CodeProjects\projectm\out\src\libprojectM\projectM_main.dir\Debug\projectM_main.lib
+  projectM.vcxproj -> T:\CodeProjects\projectm\out\src\libprojectM\Debug\projectM-4d.dll
+  projectM_playlist_main.vcxproj -> T:\CodeProjects\projectm\out\src\playlist\projectM_playlist_main.dir\Debug\projectM_playlist_main.lib
+  projectM_playlist.vcxproj -> T:\CodeProjects\projectm\out\src\playlist\Debug\projectM-4-playlistd.dll
+  projectM-Test-UI.vcxproj -> T:\CodeProjects\projectm\out\src\sdl-test-ui\Debug\projectM-Test-UI.exe
+  	Copying projectM dependencies to executable directory
