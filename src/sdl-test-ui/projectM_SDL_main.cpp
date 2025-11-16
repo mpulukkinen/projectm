@@ -139,7 +139,7 @@ int main(int argc, char *argv[]) {
         if (!loadAudioFile(audioFile, wavSpec, &wavBuf, &wavLen)) {
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to load audio file %s", audioFile.c_str());
         } else {
-            app->configureCli(wavSpec, wavBuf, wavLen, outDir, targetFps, resolutions);
+            app->configureCli(wavSpec, wavBuf, wavLen, outDir, targetFps, resolutions, audioFile);
             double seconds = 0.0;
             if (wavSpec.freq > 0 && wavSpec.channels > 0)
                 seconds = (double)wavLen / (wavSpec.freq * wavSpec.channels * (SDL_AUDIO_BITSIZE(wavSpec.format)/8));

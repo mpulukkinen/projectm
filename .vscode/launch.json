@@ -14,7 +14,9 @@
                 "--fps",
                 "30",
                 "--res",
-                "1920x1080"
+                "1920x1080",
+                "--out-dir",
+                "i:\\milkTest\\"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
