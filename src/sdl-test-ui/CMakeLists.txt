@@ -40,4 +40,15 @@ if(MSVC)
                 "The resulting projectMSDL executable will not be DPI-aware and possibly render at a "
                 "lower-than-expected resolution on high-DPI displays.")
     endif()
+
+    # Copy dependency DLLs to the executable directory
+    add_custom_command(TARGET projectM-Test-UI POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:libprojectM::projectM>
+            $<TARGET_FILE_DIR:projectM-Test-UI>
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:libprojectM::playlist>
+            $<TARGET_FILE_DIR:projectM-Test-UI>
+            COMMENT "Copying projectM dependencies to executable directory"
+            )
 endif()
