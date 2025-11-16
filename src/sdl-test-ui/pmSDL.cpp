@@ -206,14 +206,6 @@ void projectMSDL::keyHandler(SDL_Event* sdl_evt)
             }
             break;
 
-        case SDLK_i:
-            if (sdl_mod & KMOD_LGUI || sdl_mod & KMOD_RGUI || sdl_mod & KMOD_LCTRL)
-            {
-                toggleAudioInput();
-                return; // handled
-            }
-            break;
-
         case SDLK_s:
             if (sdl_mod & KMOD_LGUI || sdl_mod & KMOD_RGUI || sdl_mod & KMOD_LCTRL)
             {
@@ -291,25 +283,42 @@ void projectMSDL::keyHandler(SDL_Event* sdl_evt)
             projectm_set_preset_locked(_projectM, !projectm_get_preset_locked(_projectM));
             UpdateWindowTitle();
             break;
+        case SDLK_ESCAPE:
+            is_previewing = false;
+            break;
+        case SDLK_h:
+            show_ui = !show_ui;
+            break;
 
         case SDLK_F5:
             // Preview audio
-            if (this->cli_has_audio && this->cli_audio_buf && this->cli_audio_len > 0) {
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Previewing audio (F5)\n");
-                previewAudioAndFeed(this->cli_audio_spec, this->cli_audio_buf, this->cli_audio_len);
-            } else {
-                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No audio provided for preview.\n");
+            if(!is_previewing)
+            {
+                if (this->cli_has_audio && this->cli_audio_buf && this->cli_audio_len > 0) {
+                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Previewing audio (F5)\n");
+                    is_previewing = true;
+                    previewAudioAndFeed(this->cli_audio_spec, this->cli_audio_buf, this->cli_audio_len);
+                } else {
+                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No audio provided for preview.\n");
+                }
+                break;
             }
-            break;
+
 
         case SDLK_F6:
             // Render sequence
-            if (this->cli_has_audio && this->cli_audio_buf && this->cli_audio_len > 0 && !this->cli_out_dir.empty() && !this->cli_resolutions.empty()) {
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Starting render (F6) to %s\n", this->cli_out_dir.c_str());
-                renderSequenceFromAudio(this->cli_audio_spec, this->cli_audio_buf, this->cli_audio_len, this->cli_out_dir, this->cli_render_fps ? this->cli_render_fps : this->fps(), this->cli_resolutions);
-            } else {
-                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Render parameters missing (audio/out-dir/resolutions).\n");
+            if(!is_rendering)
+            {
+
+                if (this->cli_has_audio && this->cli_audio_buf && this->cli_audio_len > 0 && !this->cli_out_dir.empty() && !this->cli_resolutions.empty()) {
+                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Starting render (F6) to %s\n", this->cli_out_dir.c_str());
+                    is_rendering = true;
+                    renderSequenceFromAudio(this->cli_audio_spec, this->cli_audio_buf, this->cli_audio_len, this->cli_out_dir, this->cli_render_fps ? this->cli_render_fps : this->fps(), this->cli_resolutions);
+                } else {
+                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Render parameters missing (audio/out-dir/resolutions).\n");
+                }
             }
+
             break;
 
     }
@@ -513,46 +522,50 @@ void projectMSDL::renderFrame()
 
     projectm_opengl_render_frame(_projectM);
 
-    // Dear ImGui overlay
-    ImGui_ImplOpenGL2_NewFrame();
-    ImGui_ImplSDL2_NewFrame(_sdlWindow);
-    ImGui::NewFrame();
+    if(!is_rendering && show_ui)
+    {
+        // Dear ImGui overlay
+        ImGui_ImplOpenGL2_NewFrame();
+        ImGui_ImplSDL2_NewFrame(_sdlWindow);
+        ImGui::NewFrame();
 
-    ImGui::SetNextWindowBgAlpha(0.35f);
-    ImGui::Begin("projectM Overlay", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize);
-    ImGui::TextWrapped("Hotkeys:");
-    ImGui::BulletText("Ctrl/Cmd+Q: Quit");
-    ImGui::BulletText("Ctrl/Cmd+I: Toggle audio input");
-    ImGui::BulletText("Ctrl/Cmd+S: Stretch monitors");
-    ImGui::BulletText("Ctrl/Cmd+M: Change monitor");
-    ImGui::BulletText("Ctrl/Cmd+F: Fullscreen");
-    ImGui::BulletText("A: Toggle aspect correction");
-    ImGui::BulletText("R: Random preset (next)");
-    ImGui::BulletText("Y: Toggle shuffle");
-    ImGui::BulletText("Left/Right: Prev/Next preset");
-    ImGui::BulletText("Up/Down: Beat sensitivity +/-");
-    ImGui::BulletText("Space: Lock/Unlock preset");
-    ImGui::BulletText("F5: Preview audio");
-    ImGui::BulletText("F6: Render sequence");
+        ImGui::SetNextWindowBgAlpha(0.65f);
+        ImGui::Begin("projectM Overlay", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize);
+        ImGui::TextWrapped("Hotkeys:");
+        ImGui::BulletText("Ctrl + Q: Quit");
+        ImGui::BulletText("Ctrl/Cmd+S: Stretch monitors");
+        ImGui::BulletText("Ctrl/Cmd+M: Change monitor");
+        ImGui::BulletText("Ctrl/Cmd+F: Fullscreen");
+        ImGui::BulletText("A: Toggle aspect correction");
+        ImGui::BulletText("R: Random preset (next)");
+        ImGui::BulletText("Y: Toggle shuffle");
+        ImGui::BulletText("Left/Right: Prev/Next preset");
+        ImGui::BulletText("Up/Down: Beat sensitivity +/- (%f)", projectm_get_beat_sensitivity(_projectM));
+        ImGui::BulletText("Space: Lock/Unlock preset");
+        ImGui::BulletText("F5: Preview audio");
+        ImGui::BulletText("F6: Render sequence");
+        ImGui::BulletText("H: Hide this menu");
 
-    ImGui::Separator();
-    ImGui::Text("Audio: %s", this->cli_audio_file.empty() ? "(none)" : this->cli_audio_file.c_str());
-    ImGui::Separator();
-    ImGui::Text("Presets:");
-    auto presets = listPresets();
-    size_t show = presets.size() > 6 ? 6 : presets.size();
-    for (size_t i = 0; i < show; ++i) {
-        ImGui::BulletText("%zu: %s", i, presets[i].c_str());
+        ImGui::Separator();
+        ImGui::Text("Audio: %s", this->cli_audio_file.empty() ? "(none)" : this->cli_audio_file.c_str());
+        ImGui::Separator();
+        ImGui::Text("Presets:");
+        auto presets = listPresets();
+        int maxPresets = 60;
+        size_t show = presets.size() > maxPresets ? maxPresets : presets.size();
+        for (size_t i = 0; i < show; ++i) {
+            ImGui::BulletText("%zu: %s", i, presets[i].c_str());
+        }
+        ImGui::End();
+
+        ImGui::Render();
+        ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
+
+        SDL_GL_SwapWindow(_sdlWindow);
     }
-    ImGui::End();
-
-    ImGui::Render();
-    ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
-
-    SDL_GL_SwapWindow(_sdlWindow);
 }
 
-void projectMSDL::init(SDL_Window* window, const bool _renderToTexture)
+void projectMSDL::init(SDL_Window* window)
 {
     _sdlWindow = window;
     projectm_set_window_size(_projectM, _width, _height);
@@ -739,6 +752,10 @@ void projectMSDL::previewAudioAndFeed(const SDL_AudioSpec& audioSpec, const Uint
             ptr += take;
             remaining -= take;
             SDL_Delay(static_cast<Uint32>(1000.0 / this->fps()));
+
+            if(!is_previewing) {
+                break; // stop if preview flag cleared
+            }
         }
 
         // let playback finish
@@ -806,6 +823,7 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
                 SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to write JPEG: %s", filename);
             }
         }
+        is_rendering = false;
     }
 
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Render complete. %zu frames written to %s", totalFrames, outDir.c_str());

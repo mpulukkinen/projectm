@@ -109,7 +109,7 @@ public:
 
     ~projectMSDL();
 
-    void init(SDL_Window* window, const bool renderToTexture = false);
+    void init(SDL_Window* window);
     int openAudioInput();
     int toggleAudioInput();
     int initAudioInput();
@@ -196,4 +196,7 @@ private:
     size_t cli_render_fps{0};
     std::vector<std::pair<int, int>> cli_resolutions;
     bool cli_has_audio{false};
+    bool is_rendering{false};
+    bool is_previewing{false};
+    bool show_ui{true};
 };
