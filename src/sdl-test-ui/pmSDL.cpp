@@ -285,7 +285,11 @@ void projectMSDL::keyHandler(SDL_Event* sdl_evt)
             UpdateWindowTitle();
             break;
         case SDLK_ESCAPE:
+            // Stop any preview playback and allow cancelling a render in progress
             is_previewing = false;
+            if (is_rendering) {
+                is_rendering = false; // render loop will check this and abort
+            }
             break;
         case SDLK_h:
             show_ui = !show_ui;
@@ -465,7 +469,7 @@ void projectMSDL::renderFrame()
             // You can set a fixed width for the entire table.
             // For example, if you estimate a character is ~8 pixels wide, 100 chars would be ~800 pixels.
             int width = 600;
-            float table_width = columns * width; // A rough estimation for width
+            int table_width = columns * width; // A rough estimation for width
 
             ImGui::PushItemWidth(table_width);
 
@@ -480,9 +484,18 @@ void projectMSDL::renderFrame()
                         size_t idx = static_cast<size_t>(r) + static_cast<size_t>(c) * static_cast<size_t>(rows);
 
                         if (idx < total) {
-                            // Example with text wrapping
+                            // Clickable/selectable preset entry. Truncate long names for display.
+                            std::string display = std::to_string(idx) + ": " + presets[idx];
                             ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + width);
-                            ImGui::Text("%zu: %s", idx, presets[idx].c_str());
+                            // Use a unique ID per item to avoid collisions in ImGui
+                            ImGui::PushID(static_cast<int>(idx));
+                            if (ImGui::Selectable(display.c_str(), false, 0, ImVec2((float)width, 0.0f))) {
+                                // User clicked this preset: switch playlist position (hard cut)
+                                projectm_playlist_set_position(_playlist, static_cast<uint32_t>(idx), true);
+                                // Update window title to reflect newly selected preset
+                                UpdateWindowTitle();
+                            }
+                            ImGui::PopID();
                             ImGui::PopTextWrapPos();
                         }
                     }
@@ -495,9 +508,8 @@ void projectMSDL::renderFrame()
 
         ImGui::Render();
         ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
-
-        SDL_GL_SwapWindow(_sdlWindow);
     }
+    SDL_GL_SwapWindow(_sdlWindow);
 }
 
 void projectMSDL::init(SDL_Window* window)
@@ -730,6 +742,10 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
 
     // For each frame, feed audio slice and render for each resolution
     for (size_t frameIndex = 0; frameIndex < totalFrames && !done; ++frameIndex) {
+        if(!is_rendering)
+        {
+            break;
+        }
         Uint32 take = static_cast<Uint32>(std::min<double>((double)remaining, bytesPerFrame));
         if (take > 0) {
             feedPCMToProjectM(this->_projectM, ptr, take, audioSpec);
@@ -767,8 +783,55 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
                 SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to write JPEG: %s", filename);
             }
         }
-        is_rendering = false;
+        // update progress (fraction of frames completed)
+        if (totalFrames > 0) {
+            this->render_progress.store(static_cast<float>(frameIndex + 1) / static_cast<float>(totalFrames));
+        }
+
+        // Poll events while rendering so user can close / interact
+        SDL_Event evt;
+        while (SDL_PollEvent(&evt)) {
+            ImGui_ImplSDL2_ProcessEvent(&evt);
+            switch (evt.type) {
+                case SDL_QUIT:
+                    done = true;
+                    break;
+                case SDL_KEYDOWN:
+                    // allow key handling (e.g., abort with ESC)
+                    keyHandler(&evt);
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        // Render a simple centered ImGui progress overlay so user sees progress
+        {
+            ImGui_ImplOpenGL2_NewFrame();
+            ImGui_ImplSDL2_NewFrame(_sdlWindow);
+            ImGui::NewFrame();
+
+            ImGuiIO& io = ImGui::GetIO(); (void)io;
+            ImGui::SetNextWindowBgAlpha(0.35f);
+            ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
+            ImGui::SetNextWindowPos(ImVec2(static_cast<float>(_width) * 0.5f, static_cast<float>(_height) * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+            ImGui::Begin("Rendering", nullptr, flags);
+            float prog = this->render_progress.load();
+            ImGui::Text("Rendering frames: %zu / %zu", frameIndex + 1, totalFrames);
+            ImGui::ProgressBar(prog, ImVec2(400.0f, 0.0f));
+            ImGui::Text("Press ESC to cancel");
+            ImGui::End();
+
+            ImGui::Render();
+            ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
+            SDL_GL_SwapWindow(_sdlWindow);
+        }
+
+        if (done) break;
     }
 
+    // finished
+    this->render_progress.store(1.0f);
+    is_rendering = false;
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Render complete. %zu frames written to %s", totalFrames, outDir.c_str());
 }

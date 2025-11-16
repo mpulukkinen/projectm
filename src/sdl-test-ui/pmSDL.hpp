@@ -83,6 +83,8 @@
 #include <SDL2/SDL.h>
 #endif /** _WIN32 */
 #include <vector>
+#include <atomic>
+#include <thread>
 
 // DATADIR_PATH should be set by the root Makefile if this is being
 // built with autotools.
@@ -196,6 +198,8 @@ private:
     std::vector<std::pair<int, int>> cli_resolutions;
     bool cli_has_audio{false};
     bool is_rendering{false};
+    std::atomic<float> render_progress{0.0f}; // 0.0 .. 1.0
+    std::thread render_thread; // optional thread handle if needed in future
     bool is_previewing{false};
     bool show_ui{true};
 };
