@@ -85,6 +85,14 @@
 #include <vector>
 #include <atomic>
 #include <thread>
+#include <map>
+#include <memory>
+
+// Tree node for hierarchical preset organization
+struct PresetTreeNode {
+    std::map<std::string, PresetTreeNode> folders; // nested folders
+    std::vector<std::string> presets;              // preset filenames in this folder (no path)
+};
 
 // DATADIR_PATH should be set by the root Makefile if this is being
 // built with autotools.
@@ -140,6 +148,9 @@ public:
 
     // return a list of preset filenames discovered in the playlist
     std::vector<std::string> listPresets();
+
+    // Build hierarchical tree from flat preset list (called in constructor)
+    void buildPresetTree(const std::string& presetPath);
 
     // Preview audio (play) and feed projectM with PCM data for visualization
     // audioSpec/data: SDL spec and raw audio data (WAV loaded via SDL_LoadWAV)
@@ -202,4 +213,9 @@ private:
     std::thread render_thread; // optional thread handle if needed in future
     bool is_previewing{false};
     bool show_ui{true};
+    std::vector<std::string> preset_list{};
+
+    // Preset tree structure and navigation
+    PresetTreeNode preset_tree;
+    std::vector<PresetTreeNode*> tree_path; // breadcrumb navigation path through tree
 };

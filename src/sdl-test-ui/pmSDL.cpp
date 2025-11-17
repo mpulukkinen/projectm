@@ -462,49 +462,107 @@ void projectMSDL::renderFrame()
         ImGui::Text("Audio: %s", this->cli_audio_file.empty() ? "(none)" : this->cli_audio_file.c_str());
         ImGui::Separator();
         ImGui::Text("Presets:");
-        auto presets = listPresets();
-        size_t total = presets.size();
-        const int columns = 3;
-        if (total > 0) {
-            // You can set a fixed width for the entire table.
-            // For example, if you estimate a character is ~8 pixels wide, 100 chars would be ~800 pixels.
-            int width = 600;
-            int table_width = columns * width; // A rough estimation for width
 
-            ImGui::PushItemWidth(table_width);
+        float colWidth = 600;
+        // Render hierarchical preset tree
+        if (!tree_path.empty()) {
+            PresetTreeNode* current_node = tree_path.back();
 
-            // Using ImGuiTableFlags_SizingStretchSame ensures all columns are equal.
-            if (ImGui::BeginTable("preset_table", columns, ImGuiTableFlags_SizingStretchSame)) {
-                int rows = static_cast<int>((total + columns - 1) / columns);
+            // Show breadcrumb navigation
+            if (tree_path.size() > 1) {
+                if (ImGui::Button("< Back")) {
+                    tree_path.pop_back();
+                }
+            }
 
-                for (int r = 0; r < rows; ++r) {
-                    ImGui::TableNextRow();
-                    for (int c = 0; c < columns; ++c) {
-                        ImGui::TableSetColumnIndex(c);
-                        size_t idx = static_cast<size_t>(r) + static_cast<size_t>(c) * static_cast<size_t>(rows);
+            // Display current folder's subfolders and presets in multi-column format
+            // Calculate items per column (max 20 items)
+            int max_items_per_col = 20;
+            int folder_count = static_cast<int>(current_node->folders.size());
+            int preset_count = static_cast<int>(current_node->presets.size());
+            int total_items = folder_count + preset_count;
 
-                        if (idx < total) {
-                            // Clickable/selectable preset entry. Truncate long names for display.
-                            std::string display = std::to_string(idx) + ": " + presets[idx];
-                            ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + width);
-                            // Use a unique ID per item to avoid collisions in ImGui
-                            ImGui::PushID(static_cast<int>(idx));
-                            uint32_t current_pos = projectm_playlist_get_position(_playlist);
-                            bool is_selected = (static_cast<size_t>(current_pos) == idx);
-                            if (ImGui::Selectable(display.c_str(), is_selected, 0, ImVec2((float)width, 0.0f))) {
-                                // User clicked this preset: switch playlist position (hard cut)
-                                projectm_playlist_set_position(_playlist, static_cast<uint32_t>(idx), true);
-                                // Update window title to reflect newly selected preset
-                                UpdateWindowTitle();
+            if (total_items > 0) {
+                int columns = (total_items + max_items_per_col - 1) / max_items_per_col;
+                columns = std::min(columns, 3); // Cap at 3 columns
+
+                if (ImGui::BeginTable("preset_tree_table", columns, ImGuiTableFlags_SizingStretchSame)) {
+
+                    // Create sorted list of items: folders first, then presets
+                    std::vector<std::pair<std::string, bool>> items; // (name, is_folder)
+                    for (const auto& folder_pair : current_node->folders) {
+                        items.push_back({folder_pair.first, true});
+                    }
+                    for (const auto& preset : current_node->presets) {
+                        items.push_back({preset, false});
+                    }
+
+                    // Calculate rows and render in column-major order
+                    int rows = (total_items + columns - 1) / columns;
+                    for (int r = 0; r < rows; ++r) {
+                        ImGui::TableNextRow();
+                        for (int c = 0; c < columns; ++c) {
+                            ImGui::TableSetColumnIndex(c);
+                            int idx = r + c * rows;
+
+                            if (idx < static_cast<int>(items.size())) {
+                                const auto& item = items[idx];
+                                bool is_folder = item.second;
+
+                                if (is_folder) {
+                                    // Render folder as clickable button
+                                    if (ImGui::Button(("->" + item.first).c_str(), ImVec2(colWidth, 0))) {
+                                        // Navigate into this folder
+                                        if (current_node->folders.find(item.first) != current_node->folders.end()) {
+                                            tree_path.push_back(&current_node->folders[item.first]);
+                                        }
+                                    }
+                                } else {
+                                    // Render preset as selectable
+                                    std::string display = "- " + item.first;
+                                    ImGui::PushID(idx);
+
+                                    // Find this preset in the flat list to check if it's selected
+                                    // (This is a simplified check - ideally we'd track tree-aware selection)
+                                    uint32_t current_pos = projectm_playlist_get_position(_playlist);
+                                    bool is_selected = false;
+                                    if (current_pos < preset_list.size()) {
+                                        // Compare with current preset path
+                                        auto current_preset = projectm_playlist_item(_playlist, current_pos);
+                                        if (current_preset) {
+                                            std::string current_name = current_preset;
+                                            // Extract filename from full path
+                                            size_t last_sep = current_name.find_last_of("/\\");
+                                            if (last_sep != std::string::npos) {
+                                                current_name = current_name.substr(last_sep + 1);
+                                            }
+                                            is_selected = (current_name == item.first);
+                                            projectm_playlist_free_string(current_preset);
+                                        }
+                                    }
+
+                                    if (ImGui::Selectable(display.c_str(), is_selected, 0, ImVec2(colWidth, 0))) {
+                                        // Find and select this preset in the playlist
+                                        // Search through preset_list for matching filename
+                                        for (size_t i = 0; i < preset_list.size(); ++i) {
+                                            std::string path = preset_list[i];
+                                            size_t last_sep = path.find_last_of("/\\");
+                                            std::string filename = (last_sep != std::string::npos) ? path.substr(last_sep + 1) : path;
+                                            if (filename == item.first) {
+                                                projectm_playlist_set_position(_playlist, static_cast<uint32_t>(i), true);
+                                                UpdateWindowTitle();
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    ImGui::PopID();
+                                }
                             }
-                            ImGui::PopID();
-                            ImGui::PopTextWrapPos();
                         }
                     }
+                    ImGui::EndTable();
                 }
-                ImGui::EndTable();
             }
-            ImGui::PopItemWidth();
         }
         ImGui::End();
 
@@ -604,13 +662,82 @@ void projectMSDL::configureCli(const SDL_AudioSpec& audioSpec, Uint8* audioBuf, 
 #endif
 }
 
+void projectMSDL::buildPresetTree(const std::string& presetPath) {
+    // Clear previous tree
+    preset_tree.folders.clear();
+    preset_tree.presets.clear();
+
+    // Parse full paths from preset_list and build hierarchical tree
+    for (const auto& fullPath : preset_list) {
+        // Compute a path relative to the provided presetPath base.
+        // Use std::filesystem::relative when possible, fall back to
+        // stripping the prefix if relative() throws or isn't appropriate.
+        std::string relPath = fullPath;
+        try {
+            std::filesystem::path fp(fullPath);
+            std::filesystem::path base(presetPath);
+            std::filesystem::path rp = std::filesystem::relative(fp, base);
+            relPath = rp.generic_string();
+        } catch (...) {
+            // Fallback: if fullPath starts with presetPath, strip that prefix
+            if (!presetPath.empty() && fullPath.size() >= presetPath.size() &&
+                fullPath.compare(0, presetPath.size(), presetPath) == 0) {
+                relPath = fullPath.substr(presetPath.size());
+            }
+        }
+
+        // Trim any leading separators left after stripping base
+        while (!relPath.empty() && (relPath.front() == '\\' || relPath.front() == '/')) {
+            relPath.erase(0, 1);
+        }
+
+        // Split the relative path by separators (\ or /)
+        std::vector<std::string> parts;
+        std::string current;
+        for (char c : relPath) {
+            if (c == '\\' || c == '/') {
+                if (!current.empty()) {
+                    parts.push_back(current);
+                    current.clear();
+                }
+            } else {
+                current += c;
+            }
+        }
+        if (!current.empty()) parts.push_back(current);
+
+        // If no parts, skip
+        if (parts.empty()) continue;
+
+        // Last part is the filename (preset), rest are folders
+        std::string filename = parts.back();
+        parts.pop_back();
+
+        // Navigate/create folder hierarchy and add preset to leaf
+        PresetTreeNode* current_node = &preset_tree;
+        for (const auto& folder : parts) {
+            if (current_node->folders.find(folder) == current_node->folders.end()) {
+                current_node->folders[folder] = PresetTreeNode();
+            }
+            current_node = &current_node->folders[folder];
+        }
+
+        // Add preset filename to current node
+        current_node->presets.push_back(filename);
+    }
+}
+
 std::vector<std::string> projectMSDL::listPresets() {
     std::vector<std::string> out;
     if (!_playlist) return out;
     uint32_t size = projectm_playlist_size(_playlist);
     for (uint32_t i = 0; i < size; ++i) {
         char* p = projectm_playlist_item(_playlist, i);
-        if (p) {
+        std::string fullPath(p);
+        out.emplace_back(fullPath);
+
+        // This is no longer needed, but keep this still here
+        /*if (p) {
             std::string fullPath(p);
             // Find the last occurrence of a path separator
             size_t last_separator = fullPath.find_last_of("/\\");
@@ -622,7 +749,7 @@ std::vector<std::string> projectMSDL::listPresets() {
                 out.emplace_back(fullPath);
             }
             projectm_playlist_free_string(p);
-        }
+        }*/
     }
     return out;
 }
