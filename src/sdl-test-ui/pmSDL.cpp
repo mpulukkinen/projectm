@@ -297,36 +297,52 @@ void projectMSDL::keyHandler(SDL_Event* sdl_evt)
 
         case SDLK_F5:
             // Preview audio
-            if(!is_previewing)
-            {
-                if (this->cli_has_audio && this->cli_audio_buf && this->cli_audio_len > 0) {
-                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Previewing audio (F5)\n");
-                    is_previewing = true;
-                    previewAudioAndFeed(this->cli_audio_spec, this->cli_audio_buf, this->cli_audio_len);
-                } else {
-                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No audio provided for preview.\n");
-                }
-            }
-            else
-            {
-                is_previewing = false;
-            }
+            togglePreview();
             break;
 
         case SDLK_F6:
             // Render sequence
-            if(!is_rendering)
-            {
-
-                if (this->cli_has_audio && this->cli_audio_buf && this->cli_audio_len > 0 && !this->cli_out_dir.empty() && !this->cli_resolutions.empty()) {
-                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Starting render (F6) to %s\n", this->cli_out_dir.c_str());
-                    is_rendering = true;
-                    renderSequenceFromAudio(this->cli_audio_spec, this->cli_audio_buf, this->cli_audio_len, this->cli_out_dir, this->cli_render_fps ? this->cli_render_fps : this->fps(), this->cli_resolutions);
-                } else {
-                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Render parameters missing (audio/out-dir/resolutions).\n");
-                }
-            }
+            startRendering();
             break;
+    }
+}
+
+void projectMSDL::startRendering()
+{
+    if (!is_rendering)
+    {
+
+        if (this->cli_has_audio && this->cli_audio_buf && this->cli_audio_len > 0 && !this->cli_out_dir.empty() && !this->cli_resolutions.empty())
+        {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Starting render (F6) to %s\n", this->cli_out_dir.c_str());
+            is_rendering = true;
+            renderSequenceFromAudio(this->cli_audio_spec, this->cli_audio_buf, this->cli_audio_len, this->cli_out_dir, this->cli_render_fps ? this->cli_render_fps : this->fps(), this->cli_resolutions);
+        }
+        else
+        {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Render parameters missing (audio/out-dir/resolutions).\n");
+        }
+    }
+}
+
+void projectMSDL::togglePreview()
+{
+    if (!is_previewing)
+    {
+        if (this->cli_has_audio && this->cli_audio_buf && this->cli_audio_len > 0)
+        {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Previewing audio (F5)\n");
+            is_previewing = true;
+            previewAudioAndFeed(this->cli_audio_spec, this->cli_audio_buf, this->cli_audio_len);
+        }
+        else
+        {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No audio provided for preview.\n");
+        }
+    }
+    else
+    {
+        is_previewing = false;
     }
 }
 
@@ -442,6 +458,8 @@ void projectMSDL::renderFrame()
         ImGui::NewFrame();
 
         ImGui::SetNextWindowBgAlpha(0.65f);
+        // position overlay at top-left corner
+        ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
         ImGui::Begin("projectM Overlay", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
         ImGui::TextWrapped("Hotkeys:");
         ImGui::BulletText("Ctrl + Q: Quit");
@@ -450,7 +468,11 @@ void projectMSDL::renderFrame()
         ImGui::BulletText("Ctrl/Cmd+F: Fullscreen");
         ImGui::BulletText("A: Toggle aspect correction");
         ImGui::BulletText("R: Random preset (next)");
-        ImGui::BulletText("Y: Toggle shuffle");
+
+        // ShuffleText
+        std::string shuffleText = _shuffle ? "On" : "Off";
+
+        ImGui::BulletText("Y: Toggle shuffle (%s)", shuffleText.c_str());
         ImGui::BulletText("Left/Right: Prev/Next preset");
         ImGui::BulletText("Up/Down: Beat sensitivity +/- (%f)", projectm_get_beat_sensitivity(_projectM));
         ImGui::BulletText("Space: Lock/Unlock preset");
@@ -463,7 +485,7 @@ void projectMSDL::renderFrame()
         ImGui::Separator();
         ImGui::Text("Presets:");
 
-        float colWidth = 600;
+        float colWidth = 400;
         // Render hierarchical preset tree
         if (!tree_path.empty()) {
             PresetTreeNode* current_node = tree_path.back();
@@ -484,7 +506,7 @@ void projectMSDL::renderFrame()
 
             if (total_items > 0) {
                 int columns = (total_items + max_items_per_col - 1) / max_items_per_col;
-                columns = std::min(columns, 3); // Cap at 3 columns
+                columns = std::min(columns, 4); // Cap at 4 columns
 
                 if (ImGui::BeginTable("preset_tree_table", columns, ImGuiTableFlags_SizingStretchSame)) {
 
@@ -519,7 +541,7 @@ void projectMSDL::renderFrame()
                                     }
                                 } else {
                                     // Render preset as selectable
-                                    std::string display = "- " + item.first;
+                                    std::string display = " - " + item.first;
                                     ImGui::PushID(idx);
 
                                     // Find this preset in the flat list to check if it's selected
@@ -564,6 +586,38 @@ void projectMSDL::renderFrame()
                 }
             }
         }
+        ImGui::End();
+
+        ImGui::Render();
+        ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
+    }
+    else
+    {
+         // Dear ImGui overlay
+        ImGui_ImplOpenGL2_NewFrame();
+        ImGui_ImplSDL2_NewFrame(_sdlWindow);
+        ImGui::NewFrame();
+
+        ImGui::SetNextWindowBgAlpha(0.65f);
+        // position overlay at top-left corner
+        ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
+        ImGui::Begin("projectM Overlay", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+
+        if(ImGui::Button("Show Menu (H)"))
+        {
+            show_ui = true;
+        }
+
+        if(ImGui::Button("F5: Preview audio"))
+        {
+            togglePreview();
+        }
+
+        if(ImGui::Button("F6: Render sequence"))
+        {
+            startRendering();
+        }
+
         ImGui::End();
 
         ImGui::Render();
