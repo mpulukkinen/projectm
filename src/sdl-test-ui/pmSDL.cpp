@@ -1024,7 +1024,10 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
             float prog = this->render_progress.load();
             ImGui::Text("Rendering frames: %zu / %zu", frameIndex + 1, totalFrames);
             ImGui::ProgressBar(prog, ImVec2(400.0f, 0.0f));
-            ImGui::Text("Press ESC to cancel");
+            if(ImGui::Button("Cancel"))
+            {
+                is_rendering = false;
+            }
             ImGui::End();
 
             ImGui::Render();
