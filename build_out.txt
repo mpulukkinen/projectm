@@ -11,39 +11,39 @@ MSBuild version 17.14.23+b0019275e for .NET Framework
   projectM_playlist_main.vcxproj -> T:\CodeProjects\projectm\out\src\playlist\projectM_playlist_main.dir\Debug\projectM_playlist_main.lib
   projectM_playlist.vcxproj -> T:\CodeProjects\projectm\out\src\playlist\Debug\projectM-4-playlistd.dll
   pmSDL.cpp
-T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.hpp(95,17): warning C4081: expected '('; found 'string' [T:\CodeProjects\projectm\out\src\sdl-test-ui\projectM-Test-UI.vcxproj]
+T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.hpp(95,17): warning C4081: expected '('; found 'string' [T:\CodeProjects\projectm\out\src\sdl-test-ui\LvsAudioReactiveVisualizer.vcxproj]
   (compiling source file '../../../src/sdl-test-ui/pmSDL.cpp')
-  
-T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.cpp(344,39): warning C4244: '=': conversion from 'float' to 'int16_t', possible loss of data [T:\CodeProjects\projectm\out\src\sdl-test-ui\projectM-Test-UI.vcxproj]
-T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.cpp(345,43): warning C4244: '=': conversion from 'float' to 'int16_t', possible loss of data [T:\CodeProjects\projectm\out\src\sdl-test-ui\projectM-Test-UI.vcxproj]
-T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.cpp(349,39): warning C4244: '=': conversion from 'float' to 'int16_t', possible loss of data [T:\CodeProjects\projectm\out\src\sdl-test-ui\projectM-Test-UI.vcxproj]
-T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.cpp(350,43): warning C4244: '=': conversion from 'float' to 'int16_t', possible loss of data [T:\CodeProjects\projectm\out\src\sdl-test-ui\projectM-Test-UI.vcxproj]
-T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.cpp(498,61): warning C4100: 'touchtype': unreferenced parameter [T:\CodeProjects\projectm\out\src\sdl-test-ui\projectM-Test-UI.vcxproj]
-T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.cpp(498,47): warning C4100: 'pressure': unreferenced parameter [T:\CodeProjects\projectm\out\src\sdl-test-ui\projectM-Test-UI.vcxproj]
-T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.cpp(498,40): warning C4100: 'y': unreferenced parameter [T:\CodeProjects\projectm\out\src\sdl-test-ui\projectM-Test-UI.vcxproj]
-T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.cpp(498,31): warning C4100: 'x': unreferenced parameter [T:\CodeProjects\projectm\out\src\sdl-test-ui\projectM-Test-UI.vcxproj]
-T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.cpp(564,55): warning C4100: '_renderToTexture': unreferenced parameter [T:\CodeProjects\projectm\out\src\sdl-test-ui\projectM-Test-UI.vcxproj]
-T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.cpp(587,44): warning C4100: 'isHardCut': unreferenced parameter [T:\CodeProjects\projectm\out\src\sdl-test-ui\projectM-Test-UI.vcxproj]
-T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.cpp(796,51): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data [T:\CodeProjects\projectm\out\src\sdl-test-ui\projectM-Test-UI.vcxproj]
+
+T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.cpp(344,39): warning C4244: '=': conversion from 'float' to 'int16_t', possible loss of data [T:\CodeProjects\projectm\out\src\sdl-test-ui\LvsAudioReactiveVisualizer.vcxproj]
+T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.cpp(345,43): warning C4244: '=': conversion from 'float' to 'int16_t', possible loss of data [T:\CodeProjects\projectm\out\src\sdl-test-ui\LvsAudioReactiveVisualizer.vcxproj]
+T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.cpp(349,39): warning C4244: '=': conversion from 'float' to 'int16_t', possible loss of data [T:\CodeProjects\projectm\out\src\sdl-test-ui\LvsAudioReactiveVisualizer.vcxproj]
+T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.cpp(350,43): warning C4244: '=': conversion from 'float' to 'int16_t', possible loss of data [T:\CodeProjects\projectm\out\src\sdl-test-ui\LvsAudioReactiveVisualizer.vcxproj]
+T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.cpp(498,61): warning C4100: 'touchtype': unreferenced parameter [T:\CodeProjects\projectm\out\src\sdl-test-ui\LvsAudioReactiveVisualizer.vcxproj]
+T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.cpp(498,47): warning C4100: 'pressure': unreferenced parameter [T:\CodeProjects\projectm\out\src\sdl-test-ui\LvsAudioReactiveVisualizer.vcxproj]
+T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.cpp(498,40): warning C4100: 'y': unreferenced parameter [T:\CodeProjects\projectm\out\src\sdl-test-ui\LvsAudioReactiveVisualizer.vcxproj]
+T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.cpp(498,31): warning C4100: 'x': unreferenced parameter [T:\CodeProjects\projectm\out\src\sdl-test-ui\LvsAudioReactiveVisualizer.vcxproj]
+T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.cpp(564,55): warning C4100: '_renderToTexture': unreferenced parameter [T:\CodeProjects\projectm\out\src\sdl-test-ui\LvsAudioReactiveVisualizer.vcxproj]
+T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.cpp(587,44): warning C4100: 'isHardCut': unreferenced parameter [T:\CodeProjects\projectm\out\src\sdl-test-ui\LvsAudioReactiveVisualizer.vcxproj]
+T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.cpp(796,51): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data [T:\CodeProjects\projectm\out\src\sdl-test-ui\LvsAudioReactiveVisualizer.vcxproj]
   projectM_SDL_main.cpp
-T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.hpp(95,17): warning C4081: expected '('; found 'string' [T:\CodeProjects\projectm\out\src\sdl-test-ui\projectM-Test-UI.vcxproj]
+T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.hpp(95,17): warning C4081: expected '('; found 'string' [T:\CodeProjects\projectm\out\src\sdl-test-ui\LvsAudioReactiveVisualizer.vcxproj]
   (compiling source file '../../../src/sdl-test-ui/projectM_SDL_main.cpp')
-  
-T:\CodeProjects\projectm\src\sdl-test-ui\projectM_SDL_main.cpp(49,13): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data [T:\CodeProjects\projectm\out\src\sdl-test-ui\projectM-Test-UI.vcxproj]
+
+T:\CodeProjects\projectm\src\sdl-test-ui\projectM_SDL_main.cpp(49,13): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data [T:\CodeProjects\projectm\out\src\sdl-test-ui\LvsAudioReactiveVisualizer.vcxproj]
   setup.cpp
-T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.hpp(95,17): warning C4081: expected '('; found 'string' [T:\CodeProjects\projectm\out\src\sdl-test-ui\projectM-Test-UI.vcxproj]
+T:\CodeProjects\projectm\src\sdl-test-ui\pmSDL.hpp(95,17): warning C4081: expected '('; found 'string' [T:\CodeProjects\projectm\out\src\sdl-test-ui\LvsAudioReactiveVisualizer.vcxproj]
   (compiling source file '../../../src/sdl-test-ui/setup.cpp')
-  
-T:\CodeProjects\projectm\src\sdl-test-ui\ConfigFile.h(163,15): warning C4244: '=': conversion from 'int' to 'char', possible loss of data [T:\CodeProjects\projectm\out\src\sdl-test-ui\projectM-Test-UI.vcxproj]
+
+T:\CodeProjects\projectm\src\sdl-test-ui\ConfigFile.h(163,15): warning C4244: '=': conversion from 'int' to 'char', possible loss of data [T:\CodeProjects\projectm\out\src\sdl-test-ui\LvsAudioReactiveVisualizer.vcxproj]
   (compiling source file '../../../src/sdl-test-ui/setup.cpp')
-  
-T:\CodeProjects\projectm\src\sdl-test-ui\setup.cpp(38,10): warning C4996: 'getenv': This function or variable may be unsafe. Consider using _dupenv_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [T:\CodeProjects\projectm\out\src\sdl-test-ui\projectM-Test-UI.vcxproj]
-T:\CodeProjects\projectm\src\sdl-test-ui\setup.cpp(109,39): warning C4100: 'win': unreferenced parameter [T:\CodeProjects\projectm\out\src\sdl-test-ui\projectM-Test-UI.vcxproj]
-T:\CodeProjects\projectm\src\sdl-test-ui\setup.cpp(152,9): warning C4127: conditional expression is constant [T:\CodeProjects\projectm\out\src\sdl-test-ui\projectM-Test-UI.vcxproj]
+
+T:\CodeProjects\projectm\src\sdl-test-ui\setup.cpp(38,10): warning C4996: 'getenv': This function or variable may be unsafe. Consider using _dupenv_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [T:\CodeProjects\projectm\out\src\sdl-test-ui\LvsAudioReactiveVisualizer.vcxproj]
+T:\CodeProjects\projectm\src\sdl-test-ui\setup.cpp(109,39): warning C4100: 'win': unreferenced parameter [T:\CodeProjects\projectm\out\src\sdl-test-ui\LvsAudioReactiveVisualizer.vcxproj]
+T:\CodeProjects\projectm\src\sdl-test-ui\setup.cpp(152,9): warning C4127: conditional expression is constant [T:\CodeProjects\projectm\out\src\sdl-test-ui\LvsAudioReactiveVisualizer.vcxproj]
       T:\CodeProjects\projectm\src\sdl-test-ui\setup.cpp(152,9):
       consider using 'if constexpr' statement instead
-  
-T:\CodeProjects\projectm\src\sdl-test-ui\setup.cpp(178,9): warning C4189: 'err': local variable is initialized but not referenced [T:\CodeProjects\projectm\out\src\sdl-test-ui\projectM-Test-UI.vcxproj]
+
+T:\CodeProjects\projectm\src\sdl-test-ui\setup.cpp(178,9): warning C4189: 'err': local variable is initialized but not referenced [T:\CodeProjects\projectm\out\src\sdl-test-ui\LvsAudioReactiveVisualizer.vcxproj]
   Generating Code...
-  projectM-Test-UI.vcxproj -> T:\CodeProjects\projectm\out\src\sdl-test-ui\Debug\projectM-Test-UI.exe
+  LvsAudioReactiveVisualizer.vcxproj -> T:\CodeProjects\projectm\out\src\sdl-test-ui\Debug\LvsAudioReactiveVisualizer.exe
   	Copying projectM dependencies to executable directory

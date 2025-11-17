@@ -190,6 +190,30 @@ void projectMSDL::keyHandler(SDL_Event* sdl_evt)
         keymod = true;
     }
 
+    if(is_rendering)
+    {
+        if(SDLK_ESCAPE == sdl_keycode)
+        {
+            // Allow cancelling a render in progress
+            is_rendering = false;
+            is_previewing = false;
+            return;
+        }
+        // Only allow cancel / quit
+        if(sdl_keycode == SDLK_q)
+        {
+            if (sdl_mod & KMOD_LGUI || sdl_mod & KMOD_RGUI || sdl_mod & KMOD_LCTRL)
+            {
+                // cmd/ctrl-q = quit
+                is_rendering = false;
+                is_previewing = false;
+                done = true;
+                return;
+            }
+        }
+        return;//
+    }
+
     // handle keyboard input (for our app first, then projectM)
     switch (sdl_keycode)
     {
@@ -201,7 +225,9 @@ void projectMSDL::keyHandler(SDL_Event* sdl_evt)
             if (sdl_mod & KMOD_LGUI || sdl_mod & KMOD_RGUI || sdl_mod & KMOD_LCTRL)
             {
                 // cmd/ctrl-q = quit
-                done = 1;
+                is_rendering = false;
+                is_previewing = false;
+                done = true;
                 return;
             }
             break;
@@ -286,9 +312,7 @@ void projectMSDL::keyHandler(SDL_Event* sdl_evt)
         case SDLK_ESCAPE:
             // Stop any preview playback and allow cancelling a render in progress
             is_previewing = false;
-            if (is_rendering) {
-                is_rendering = false; // render loop will check this and abort
-            }
+            is_rendering = false; // render loop will check this and abort
             break;
         case SDLK_h:
             show_ui = !show_ui;
@@ -310,7 +334,6 @@ void projectMSDL::startRendering()
 {
     if (!is_rendering)
     {
-
         if (this->cli_has_audio && this->cli_audio_buf && this->cli_audio_len > 0 && !this->cli_out_dir.empty() && !this->cli_resolutions.empty())
         {
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Starting render (F6) to %s\n", this->cli_out_dir.c_str());
@@ -398,7 +421,8 @@ void projectMSDL::pollEvent()
                 break;
 
             case SDL_QUIT:
-                done = true;
+                is_previewing = false;
+                is_rendering = false;
                 break;
         }
     }
@@ -590,7 +614,7 @@ void projectMSDL::renderFrame()
         ImGui::Render();
         ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
     }
-    else
+    else if(!is_rendering)
     {
          // Dear ImGui overlay
         ImGui_ImplOpenGL2_NewFrame();
@@ -884,16 +908,12 @@ void projectMSDL::previewAudioAndFeed(const SDL_AudioSpec& audioSpec, const Uint
         const Uint8* ptr = audioBuf;
         Uint32 remaining = audioLen;
 
-        for (size_t f = 0; f < totalFrames && remaining > 0 && !done; ++f) {
+        for (size_t f = 0; f < totalFrames && remaining > 0 && is_previewing; ++f) {
             Uint32 take = static_cast<Uint32>(std::min<double>((double)remaining, bytesPerFrame));
             feedPCMToProjectM(this->_projectM, ptr, take, audioSpec);
             ptr += take;
             remaining -= take;
             SDL_Delay(static_cast<Uint32>(1000.0 / this->fps()));
-
-            if(!is_previewing) {
-                break; // stop if preview flag cleared
-            }
         }
 
         // let playback finish
@@ -929,11 +949,7 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
     bool saved_stretch = this->stretch;
 
     // For each frame, feed audio slice and render for each resolution
-    for (size_t frameIndex = 0; frameIndex < totalFrames && !done; ++frameIndex) {
-        if(!is_rendering)
-        {
-            break;
-        }
+    for (size_t frameIndex = 0; frameIndex < totalFrames && !is_rendering; ++frameIndex) {
         Uint32 take = static_cast<Uint32>(std::min<double>((double)remaining, bytesPerFrame));
         if (take > 0) {
             feedPCMToProjectM(this->_projectM, ptr, take, audioSpec);
@@ -982,11 +998,7 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
             ImGui_ImplSDL2_ProcessEvent(&evt);
             switch (evt.type) {
                 case SDL_QUIT:
-                    done = true;
-                    break;
-                case SDL_KEYDOWN:
-                    // allow key handling (e.g., abort with ESC)
-                    keyHandler(&evt);
+                    is_rendering = false;
                     break;
                 default:
                     break;
@@ -1015,7 +1027,7 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
             SDL_GL_SwapWindow(_sdlWindow);
         }
 
-        if (done) break;
+        if (!is_rendering) break;
     }
 
     // finished (or cancelled) - restore window/render state
@@ -1031,4 +1043,6 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
     this->render_progress.store(is_rendering ? 1.0f : 0.0f);
     is_rendering = false;
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Render complete. %zu frames written to %s", totalFrames, outDir.c_str());
+    done = true;
+    exit(0); // exit after rendering in CLI mode
 }

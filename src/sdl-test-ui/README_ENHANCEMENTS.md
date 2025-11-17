@@ -60,24 +60,24 @@ cmake -DENABLE_SDL_UI=ON -DVCPKG_FEATURE=gui ..
 cmake --build . --config Release
 ```
 
-The executable will be `projectM-Test-UI`.
+The executable will be `LvsAudioReactiveVisualizer`.
 
 ## Usage Examples
 
 ### List presets in a custom directory
 ```bash
-./projectM-Test-UI --preset-dir /path/to/presets --list-presets
+./LvsAudioReactiveVisualizer --preset-dir /path/to/presets --list-presets
 ```
 
 ### Preview audio with visualization
 ```bash
-./projectM-Test-UI --preset-dir /path/to/presets --audio song.wav
+./LvsAudioReactiveVisualizer --preset-dir /path/to/presets --audio song.wav
 # Then press F5 or click Preview button in the window
 ```
 
 ### Render visualization to JPEG sequence
 ```bash
-./projectM-Test-UI \
+./LvsAudioReactiveVisualizer \
   --preset-dir /path/to/presets \
   --audio song.wav \
   --out-dir /path/to/output \
@@ -95,7 +95,7 @@ Output files:
 
 ### Show help
 ```bash
-./projectM-Test-UI --help
+./LvsAudioReactiveVisualizer --help
 ```
 
 ## Architecture

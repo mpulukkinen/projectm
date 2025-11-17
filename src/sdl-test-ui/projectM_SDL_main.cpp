@@ -53,7 +53,7 @@ static int mainLoop(void *userData) {
     Uint32 last_time = SDL_GetTicks();
 
     // loop
-    while (! app->done) {
+    while (!app->done) {
         // render
         app->renderFrame();
         processLoopbackFrame(app);
