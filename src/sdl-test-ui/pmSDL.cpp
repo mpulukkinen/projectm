@@ -950,7 +950,7 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
     bool saved_stretch = this->stretch;
 
     // For each frame, feed audio slice and render for each resolution
-    for (size_t frameIndex = 0; frameIndex < totalFrames && !is_rendering; ++frameIndex) {
+    for (size_t frameIndex = 0; frameIndex < totalFrames && is_rendering; ++frameIndex) {
         Uint32 take = static_cast<Uint32>(std::min<double>((double)remaining, bytesPerFrame));
         if (take > 0) {
             feedPCMToProjectM(this->_projectM, ptr, take, audioSpec);
