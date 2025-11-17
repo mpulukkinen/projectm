@@ -335,6 +335,8 @@ void projectMSDL::startRendering()
 {
     if (!is_rendering)
     {
+        is_previewing = false; // stop preview if running
+        projectm_set_preset_locked(_projectM, !projectm_get_preset_locked(_projectM));
         if (this->cli_has_audio && this->cli_audio_buf && this->cli_audio_len > 0 && !this->cli_out_dir.empty() && !this->cli_resolutions.empty())
         {
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Starting render (F6) to %s\n", this->cli_out_dir.c_str());
@@ -596,6 +598,7 @@ void projectMSDL::renderFrame()
                                             std::string filename = (last_sep != std::string::npos) ? path.substr(last_sep + 1) : path;
                                             if (filename == item.first) {
                                                 projectm_playlist_set_position(_playlist, static_cast<uint32_t>(i), true);
+                                                projectm_set_preset_locked(_projectM, !projectm_get_preset_locked(_projectM));
                                                 UpdateWindowTitle();
                                                 break;
                                             }
@@ -998,6 +1001,7 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
         while (SDL_PollEvent(&evt)) {
             ImGui_ImplSDL2_ProcessEvent(&evt);
             switch (evt.type) {
+                case SDLK_ESCAPE:
                 case SDL_QUIT:
                     is_rendering = false;
                     break;
