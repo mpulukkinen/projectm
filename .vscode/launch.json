@@ -2,10 +2,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "projectM-Test-UI",
+            "name": "LvsAudioReactiveVisualizer",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/out/src/sdl-test-ui/Debug/projectM-Test-UI.exe",
+            "program": "${workspaceFolder}/out/src/sdl-test-ui/Debug/LvsAudioReactiveVisualizer.exe",
             "args": [
                 "--preset-dir",
                 "C:\\Users\\copyhere2\\Downloads\\projectMSDL-Windows-x64-2.0-pre3\\projectMSDL\\presets",

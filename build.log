@@ -10,5 +10,5 @@ MSBuild version 17.14.23+b0019275e for .NET Framework
   projectM.vcxproj -> T:\CodeProjects\projectm\out\src\libprojectM\Debug\projectM-4d.dll
   projectM_playlist_main.vcxproj -> T:\CodeProjects\projectm\out\src\playlist\projectM_playlist_main.dir\Debug\projectM_playlist_main.lib
   projectM_playlist.vcxproj -> T:\CodeProjects\projectm\out\src\playlist\Debug\projectM-4-playlistd.dll
-  projectM-Test-UI.vcxproj -> T:\CodeProjects\projectm\out\src\sdl-test-ui\Debug\projectM-Test-UI.exe
+  LvsAudioReactiveVisualizer.vcxproj -> T:\CodeProjects\projectm\out\src\sdl-test-ui\Debug\LvsAudioReactiveVisualizer.exe
   	Copying projectM dependencies to executable directory

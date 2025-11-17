@@ -11,7 +11,31 @@
                 "--config",
                 "Debug",
                 "--target",
-                "projectM-Test-UI"
+                "LvsAudioReactiveVisualizer"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": "$msCompile",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "build-release",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "./out",
+                "--config",
+                "Release",
+                "--target",
+                "LvsAudioReactiveVisualizer"
             ],
             "group": {
                 "kind": "build",

@@ -2,7 +2,7 @@ if(NOT ENABLE_SDL_UI OR ENABLE_EMSCRIPTEN OR CMAKE_SYSTEM_NAME STREQUAL Android)
     return()
 endif()
 
-add_executable(projectM-Test-UI
+add_executable(LvsAudioReactiveVisualizer
         ConfigFile.cpp
         ConfigFile.h
         audioCapture.cpp
@@ -18,7 +18,7 @@ add_executable(projectM-Test-UI
         setup.hpp
         )
 
-target_link_libraries(projectM-Test-UI
+target_link_libraries(LvsAudioReactiveVisualizer
         PRIVATE
         libprojectM::playlist
         GLM::GLM
@@ -38,7 +38,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(imgui)
 
 if (imgui_POPULATED)
-    message(STATUS "Adding Dear ImGui sources to projectM-Test-UI")
+    message(STATUS "Adding Dear ImGui sources to LvsAudioReactiveVisualizer")
     set(IMGUI_SOURCES
             ${imgui_SOURCE_DIR}/imgui.cpp
             ${imgui_SOURCE_DIR}/imgui_demo.cpp
@@ -48,13 +48,13 @@ if (imgui_POPULATED)
             ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
             ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl2.cpp
     )
-    target_sources(projectM-Test-UI PRIVATE ${IMGUI_SOURCES})
-    target_include_directories(projectM-Test-UI PRIVATE ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+    target_sources(LvsAudioReactiveVisualizer PRIVATE ${IMGUI_SOURCES})
+    target_include_directories(LvsAudioReactiveVisualizer PRIVATE ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
 endif()
 
 if(MSVC)
     if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
-        set_target_properties(projectM-Test-UI
+        set_target_properties(LvsAudioReactiveVisualizer
                 PROPERTIES
                 VS_DPI_AWARE "PerMonitor"
                 )
