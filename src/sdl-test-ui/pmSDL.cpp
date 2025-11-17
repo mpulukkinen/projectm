@@ -984,7 +984,7 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
 
             // write JPEG using stb_image_write
             char filename[1024];
-            snprintf(filename, sizeof(filename), "%s/%09zu.jpg", outDir.c_str(), w, h, frameIndex);
+            snprintf(filename, sizeof(filename), "%s/%09zu.jpg", outDir.c_str(), frameIndex);
             int quality = 90;
             int comp = 3;
             if (!stbi_write_jpg(filename, w, h, comp, flipped.data(), quality)) {
