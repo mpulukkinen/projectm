@@ -217,6 +217,9 @@ private:
     std::thread render_thread; // optional thread handle if needed in future
     bool is_previewing{false};
     bool show_ui{true};
+    bool preset_lock{true};
+    bool render_as_transparency{false};
+    Uint16 preset_duration_sec{20};
     std::vector<std::string> preset_list{};
 
     // Preset tree structure and navigation
