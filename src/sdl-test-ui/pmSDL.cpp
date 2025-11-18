@@ -507,6 +507,23 @@ void projectMSDL::renderFrame()
         ImGui::BulletText("H: Hide this menu");
 
         ImGui::Separator();
+
+        if(ImGui::Button("Preview audio"))
+        {
+            togglePreview();
+        }
+
+        if(ImGui::Button("Render sequence"))
+        {
+            startRendering();
+        }
+
+        if(ImGui::Button("Exit"))
+        {
+            done = true;
+        }
+
+        ImGui::Separator();
         ImGui::Text("Audio: %s", this->cli_audio_file.empty() ? "(none)" : this->cli_audio_file.c_str());
         ImGui::Separator();
         ImGui::Text("Presets:");
