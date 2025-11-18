@@ -34,8 +34,8 @@
 #include <thread>
 #include <chrono>
 #include <filesystem>
-#include <cstring>
 #include <string>
+#include "../../../vendor/SOIL2/src/SOIL2/stb_image_write.h"
 #include "stb_image_write.h"
 #include "text_render.h"
 // Dear ImGui
@@ -51,8 +51,20 @@ projectMSDL::projectMSDL(SDL_GLContext glCtx, const std::string& presetPath)
     projectm_get_window_size(_projectM, &_width, &_height);
     projectm_playlist_set_preset_switched_event_callback(_playlist, &projectMSDL::presetSwitchedEvent, static_cast<void*>(this));
     projectm_playlist_add_path(_playlist, presetPath.c_str(), true, false);
-    projectm_playlist_set_shuffle(_playlist, _shuffle);
+    // Provide texture search paths as an array + size (convert single path to a list)
+    std::vector<std::string> texture_paths;
+    texture_paths.push_back(presetPath); // add more entries if needed
 
+    std::vector<const char*> texture_path_cstrs;
+    texture_path_cstrs.reserve(texture_paths.size());
+    for (const auto &p : texture_paths) texture_path_cstrs.push_back(p.c_str());
+
+    // Pass pointer to array and its size to the API
+    projectm_set_texture_search_paths(_projectM, texture_path_cstrs.data(), static_cast<size_t>(texture_path_cstrs.size()));
+
+    projectm_playlist_set_shuffle(_playlist, _shuffle);
+    projectm_set_preset_locked(_projectM, preset_lock);
+    projectm_set_preset_duration(_projectM, preset_duration_sec);
 
     preset_list = listPresets();
 
@@ -306,8 +318,22 @@ void projectMSDL::keyHandler(SDL_Event* sdl_evt)
             projectm_set_beat_sensitivity(_projectM, projectm_get_beat_sensitivity(_projectM) - 0.01f);
             break;
 
+        case SDLK_PLUS:
+            preset_duration_sec++;
+            projectm_set_preset_duration(_projectM, preset_duration_sec);
+            break;
+        case SDLK_MINUS:
+            if(preset_duration_sec > 1)
+            {
+                preset_duration_sec++;
+                projectm_set_preset_duration(_projectM, preset_duration_sec);
+            }
+
+            break;
+
         case SDLK_SPACE:
-            projectm_set_preset_locked(_projectM, !projectm_get_preset_locked(_projectM));
+            preset_lock = !preset_lock;
+            projectm_set_preset_locked(_projectM, preset_lock);
             UpdateWindowTitle();
             break;
         case SDLK_ESCAPE:
@@ -318,7 +344,10 @@ void projectMSDL::keyHandler(SDL_Event* sdl_evt)
         case SDLK_h:
             show_ui = !show_ui;
             break;
-
+        case SDLK_t:
+            // Preview audio
+            render_as_transparency = !render_as_transparency;
+            break;
         case SDLK_F5:
             // Preview audio
             togglePreview();
@@ -336,7 +365,7 @@ void projectMSDL::startRendering()
     if (!is_rendering)
     {
         is_previewing = false; // stop preview if running
-        projectm_set_preset_locked(_projectM, !projectm_get_preset_locked(_projectM));
+        projectm_set_preset_locked(_projectM, preset_lock);
         if (this->cli_has_audio && this->cli_audio_buf && this->cli_audio_len > 0 && !this->cli_out_dir.empty() && !this->cli_resolutions.empty())
         {
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Starting render (F6) to %s\n", this->cli_out_dir.c_str());
@@ -497,11 +526,21 @@ void projectMSDL::renderFrame()
 
         // ShuffleText
         std::string shuffleText = _shuffle ? "On" : "Off";
+        std::string lockText = preset_lock ? "Locked" : "Unlocked";
 
         ImGui::BulletText("Y: Toggle shuffle (%s)", shuffleText.c_str());
         ImGui::BulletText("Left/Right: Prev/Next preset");
         ImGui::BulletText("Up/Down: Beat sensitivity +/- (%f)", projectm_get_beat_sensitivity(_projectM));
-        ImGui::BulletText("Space: Lock/Unlock preset");
+
+        if (!preset_lock)
+        {
+            ImGui::BulletText("+/-: Preset dusation before transition (%f)", preset_duration_sec);
+        }
+
+        ImGui::BulletText("Space: Lock/Unlock preset (%s)", lockText.c_str());
+
+        std::string transparency = render_as_transparency ? "transparent" : "black";
+        ImGui::BulletText("T: Rendering background: %s", transparency.c_str());
         ImGui::BulletText("F5: Preview audio");
         ImGui::BulletText("F6: Render sequence");
         ImGui::BulletText("H: Hide this menu");
@@ -615,7 +654,7 @@ void projectMSDL::renderFrame()
                                             std::string filename = (last_sep != std::string::npos) ? path.substr(last_sep + 1) : path;
                                             if (filename == item.first) {
                                                 projectm_playlist_set_position(_playlist, static_cast<uint32_t>(i), true);
-                                                projectm_set_preset_locked(_projectM, !projectm_get_preset_locked(_projectM));
+                                                projectm_set_preset_locked(_projectM, preset_lock);
                                                 UpdateWindowTitle();
                                                 break;
                                             }
@@ -989,24 +1028,69 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             projectm_opengl_render_frame(_projectM);
 
-            // read pixels
-            std::vector<unsigned char> pixels(w * h * 3);
-            glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
+            // ensure previous GL ops are finished and pack alignment is 1
+            glFinish();
+            glPixelStorei(GL_PACK_ALIGNMENT, 1);
 
-            // flip vertically because GL origin is bottom-left
-            std::vector<unsigned char> flipped(w * h * 3);
-            for (int y = 0; y < h; ++y) {
-                memcpy(&flipped[(h - 1 - y) * w * 3], &pixels[y * w * 3], w * 3);
+            if (render_as_transparency)
+            {
+                // read pixels as RGBA (with alpha channel for transparency)
+                std::vector<unsigned char> pixels(w * h * 4);
+                glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+
+                // 3. Post-Process: Generate Alpha from Brightness (Luma Keying)
+                // Iterate through every pixel
+                for (size_t i = 0; i < pixels.size(); i += 4) {
+                    unsigned char r = pixels[i];
+                    unsigned char g = pixels[i + 1];
+                    unsigned char b = pixels[i + 2];
+
+                    // Calculate brightness.
+                    // Simple method: Use the maximum value of R, G, or B.
+                    // This ensures that if a pixel is pure Red (255,0,0), it is fully opaque.
+                    // If a pixel is Black (0,0,0), Alpha becomes 0 (Transparent).
+                    unsigned char brightness = std::max({r, g, b});
+
+                    // Overwrite the Alpha channel (pixels[i+3]) with the calculated brightness
+                    pixels[i + 3] = brightness;
+                }
+
+                // flip vertically because GL origin is bottom-left
+                std::vector<unsigned char> flipped(w * h * 4);
+                for (int y = 0; y < h; ++y) {
+                    memcpy(&flipped[(h - 1 - y) * w * 4], &pixels[y * w * 4], w * 4);
+                }
+
+                // write PNG using stb_image_write (preserve alpha)
+                char filename[1024];
+                snprintf(filename, sizeof(filename), "%s/%09zu.png", outDir.c_str(), frameIndex);
+                int comp = 4;  // RGBA
+                if (!stbi_write_png(filename, w, h, comp, flipped.data(), w * comp)) {
+                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to write PNG: %s", filename);
+                }
+            }
+            else
+            {
+                // read pixels
+                std::vector<unsigned char> pixels(w * h * 3);
+                glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
+
+                // flip vertically because GL origin is bottom-left
+                std::vector<unsigned char> flipped(w * h * 3);
+                for (int y = 0; y < h; ++y) {
+                    memcpy(&flipped[(h - 1 - y) * w * 3], &pixels[y * w * 3], w * 3);
+                }
+
+                // write JPEG using stb_image_write
+                char filename[1024];
+                snprintf(filename, sizeof(filename), "%s/%09zu.jpg", outDir.c_str(), frameIndex);
+                int quality = 90;
+                int comp = 3;
+                if (!stbi_write_jpg(filename, w, h, comp, flipped.data(), quality)) {
+                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to write JPEG: %s", filename);
+                }
             }
 
-            // write JPEG using stb_image_write
-            char filename[1024];
-            snprintf(filename, sizeof(filename), "%s/%09zu.jpg", outDir.c_str(), frameIndex);
-            int quality = 90;
-            int comp = 3;
-            if (!stbi_write_jpg(filename, w, h, comp, flipped.data(), quality)) {
-                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to write JPEG: %s", filename);
-            }
         }
         // update progress (fraction of frames completed)
         if (totalFrames > 0) {
