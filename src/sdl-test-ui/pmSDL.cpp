@@ -1119,6 +1119,9 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
         std::filesystem::create_directories(outDir, ec);
     }
 
+    glClearColor(0.0f, 0.0f, 0.0f, render_as_transparency ? 0.0f : 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
     // Compute total frames from audio length
     double seconds = (double)audioLen / (audioSpec.freq * audioSpec.channels * (SDL_AUDIO_BITSIZE(audioSpec.format)/8));
     size_t totalFrames = static_cast<size_t>(seconds * fps);
@@ -1153,10 +1156,7 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
 
     // resize window/render target
     this->resize(w, h);
-
-    glClearColor(0.0f, 0.0f, 0.0f, render_as_transparency ? 0.0f : 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glEnable(GL_FRAMEBUFFER_SRGB);
+    //glEnable(GL_FRAMEBUFFER_SRGB);
     // For each frame, feed audio slice and render for each resolution
     for (size_t frameIndex = 0; frameIndex < totalFrames && is_rendering; ++frameIndex) {
 
@@ -1166,12 +1166,18 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
             ptr += take;
             remaining -= take;
         }
+
+        if (frameIndex > 0) {
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, resolveFBO.fbo);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0); // Window
+            // Note: We write to the back buffer (0)
+            glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        }
+
         // render
         glViewport(0,0,w,h);
         // Clear the default framebuffer each frame. Use transparent clear when
         // rendering PNGs to preserve alpha, otherwise clear to opaque black.
-        glClearColor(0.0f, 0.0f, 0.0f, render_as_transparency ? 0.0f : 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         projectm_opengl_render_frame(_projectM);
 
         glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);        // 0 = Window (Back buffer by default)
@@ -1183,11 +1189,12 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
 
         // ensure previous GL ops are finished and pack alignment is 1
         glFinish();
+
         glBindFramebuffer(GL_READ_FRAMEBUFFER, resolveFBO.fbo);
         glReadBuffer(GL_COLOR_ATTACHMENT0);
 
         glPixelStorei(GL_PACK_ALIGNMENT, 1);
-        glReadBuffer(GL_FRONT);
+        //glReadBuffer(GL_FRONT);
         if (render_as_transparency)
         {
             // read pixels as RGBA (with alpha channel for transparency)
@@ -1244,6 +1251,9 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
                 SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to write JPEG: %s", filename);
             }
         }
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0); // Back to Window
+        glViewport(0, 0, _width, _height);    // Full window for UI
 
         // update progress (fraction of frames completed)
         if (totalFrames > 0) {
