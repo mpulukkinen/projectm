@@ -449,6 +449,11 @@ void projectMSDL::pollEvent()
                     case SDL_WINDOWEVENT_SIZE_CHANGED:
                         resize(w, h);
                         break;
+                    case SDL_WINDOWEVENT_CLOSE:
+                        done = true;
+                        is_rendering = false;
+                        is_previewing = false;
+                        break;
                 }
                 break;
             case SDL_KEYDOWN:
@@ -462,6 +467,7 @@ void projectMSDL::pollEvent()
             case SDL_QUIT:
                 is_previewing = false;
                 is_rendering = false;
+                done = true;
                 break;
         }
     }
