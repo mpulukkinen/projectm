@@ -183,6 +183,12 @@ void projectMSDL::scrollHandler(SDL_Event* sdl_evt)
 
 void projectMSDL::keyHandler(SDL_Event* sdl_evt)
 {
+    // Block hotkeys if ImGui wants keyboard input (e.g., search box focused)
+    ImGuiIO& io = ImGui::GetIO();
+    if (io.WantCaptureKeyboard) {
+        return;
+    }
+
     SDL_Keymod sdl_mod = (SDL_Keymod) sdl_evt->key.keysym.mod;
     SDL_Keycode sdl_keycode = sdl_evt->key.keysym.sym;
 
