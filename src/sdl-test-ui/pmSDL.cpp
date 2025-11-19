@@ -35,8 +35,9 @@
 #include <chrono>
 #include <filesystem>
 #include <string>
+#include <algorithm>
+#include <cctype>
 #include "../../../vendor/SOIL2/src/SOIL2/stb_image_write.h"
-#include "stb_image_write.h"
 #include "text_render.h"
 // Dear ImGui
 #include "imgui.h"
@@ -555,9 +556,84 @@ void projectMSDL::renderFrame()
         ImGui::Separator();
         ImGui::Text("Presets:");
 
+        // Search box for presets. When non-empty, show filtered flat list instead of the tree.
         float colWidth = 400;
-        // Render hierarchical preset tree
-        if (!tree_path.empty()) {
+        ImGui::PushItemWidth(colWidth);
+        if (ImGui::InputText("Search Presets", this->preset_search, IM_ARRAYSIZE(this->preset_search))) {
+            // user typed - nothing else required here; filtering occurs below
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Clear Search")) {
+            this->preset_search[0] = '\0';
+        }
+        ImGui::PopItemWidth();
+
+        // Trim search string whitespace for checking
+        std::string search_term(this->preset_search);
+        auto ltrim = [](std::string &s) {
+            s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) { return !std::isspace(ch); }));
+        };
+        auto rtrim = [](std::string &s) {
+            s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), s.end());
+        };
+        ltrim(search_term);
+        rtrim(search_term);
+
+        // If there's a search term, render a filtered flat list of presets
+        if (!search_term.empty()) {
+            // case-insensitive search
+            std::string query = search_term;
+            std::transform(query.begin(), query.end(), query.begin(), [](unsigned char c){ return std::tolower(c); });
+
+            // collect matching indices and display names
+            std::vector<size_t> matches;
+            std::vector<std::string> match_names;
+            for (size_t i = 0; i < preset_list.size(); ++i) {
+                std::string full = preset_list[i];
+                size_t last_sep = full.find_last_of("/\\");
+                std::string fname = (last_sep != std::string::npos) ? full.substr(last_sep + 1) : full;
+                std::string fname_l = fname;
+                std::transform(fname_l.begin(), fname_l.end(), fname_l.begin(), [](unsigned char c){ return std::tolower(c); });
+                if (fname_l.find(query) != std::string::npos) {
+                    matches.push_back(i);
+                    match_names.push_back(fname);
+                }
+            }
+
+            // Display results in the same multi-column layout
+            if (!matches.empty()) {
+                int columns = std::min(4, (static_cast<int>(matches.size()) + 19) / 20);
+                if (ImGui::BeginTable("preset_search_table", columns, ImGuiTableFlags_SizingStretchSame)) {
+                    int rows = (static_cast<int>(matches.size()) + columns - 1) / columns;
+                    for (int r = 0; r < rows; ++r) {
+                        ImGui::TableNextRow();
+                        for (int c = 0; c < columns; ++c) {
+                            ImGui::TableSetColumnIndex(c);
+                            int idx = r + c * rows;
+                            if (idx < static_cast<int>(matches.size())) {
+                                size_t presetIndex = matches[idx];
+                                const std::string& name = match_names[idx];
+                                ImGui::PushID(static_cast<int>(presetIndex));
+
+                                // Determine selection state
+                                uint32_t current_pos = projectm_playlist_get_position(_playlist);
+                                bool is_selected = (current_pos == presetIndex);
+
+                                if (ImGui::Selectable(name.c_str(), is_selected, 0, ImVec2(colWidth, 0))) {
+                                    projectm_playlist_set_position(_playlist, static_cast<uint32_t>(presetIndex), true);
+                                    projectm_set_preset_locked(_projectM, preset_lock);
+                                    UpdateWindowTitle();
+                                }
+                                ImGui::PopID();
+                            }
+                        }
+                    }
+                    ImGui::EndTable();
+                }
+            } else {
+                ImGui::TextDisabled("No presets match '%s'", search_term.c_str());
+            }
+        } else if (!tree_path.empty()) {
             PresetTreeNode* current_node = tree_path.back();
 
             // Show breadcrumb navigation

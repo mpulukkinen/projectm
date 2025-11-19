@@ -221,6 +221,7 @@ private:
     bool render_as_transparency{false};
     Uint16 preset_duration_sec{20};
     std::vector<std::string> preset_list{};
+    char preset_search[256] = { 0 };
 
     // Preset tree structure and navigation
     PresetTreeNode preset_tree;
