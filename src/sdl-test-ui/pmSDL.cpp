@@ -501,13 +501,11 @@ void projectMSDL::touchDestroyAll()
 
 void projectMSDL::renderFrame()
 {
-    glClearColor(0.0, 0.0, 0.0, 0.0);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    projectm_opengl_render_frame(_projectM);
-
     if(!is_rendering && show_ui)
     {
+        glClearColor(0.0, 0.0, 0.0, 0.0);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        projectm_opengl_render_frame(_projectM);
         // Dear ImGui overlay
         ImGui_ImplOpenGL2_NewFrame();
         ImGui_ImplSDL2_NewFrame(_sdlWindow);
@@ -555,7 +553,8 @@ void projectMSDL::renderFrame()
 
         if(ImGui::Button("Render sequence"))
         {
-            startRendering();
+            // defer start until after ImGui frame ends to avoid nested NewFrame() calls
+            this->pending_render_request = true;
         }
 
         if(ImGui::Button("Exit"))
@@ -749,9 +748,19 @@ void projectMSDL::renderFrame()
 
         ImGui::Render();
         ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
+        SDL_GL_SwapWindow(_sdlWindow);
+
+        // If a render was requested via the UI, start it now that ImGui frame has finished
+        if (this->pending_render_request) {
+            this->pending_render_request = false;
+            startRendering();
+        }
     }
     else if(!is_rendering)
     {
+        glClearColor(0.0, 0.0, 0.0, 0.0);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        projectm_opengl_render_frame(_projectM);
          // Dear ImGui overlay
         ImGui_ImplOpenGL2_NewFrame();
         ImGui_ImplSDL2_NewFrame(_sdlWindow);
@@ -774,15 +783,21 @@ void projectMSDL::renderFrame()
 
         if(ImGui::Button("F6: Render sequence"))
         {
-            startRendering();
+            this->pending_render_request = true;
         }
 
         ImGui::End();
 
         ImGui::Render();
         ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
+        SDL_GL_SwapWindow(_sdlWindow);
+
+        // If a render was requested via the UI in this simpler overlay, start it now
+        if (this->pending_render_request) {
+            this->pending_render_request = false;
+            startRendering();
+        }
     }
-    SDL_GL_SwapWindow(_sdlWindow);
 }
 
 void projectMSDL::init(SDL_Window* window)
@@ -1060,6 +1075,43 @@ void projectMSDL::previewAudioAndFeed(const SDL_AudioSpec& audioSpec, const Uint
     }).detach();
 }
 
+// ============================================================================
+// 1. HELPER: A "Resolve" Buffer (Put this class somewhere in your header or above the function)
+// ============================================================================
+struct ResolveBuffer {
+    GLuint fbo = 0;
+    GLuint texture = 0;
+    int width = 0;
+    int height = 0;
+
+    void resize(int w, int h) {
+        if (width == w && height == h) return;
+        width = w; height = h;
+
+        if (fbo == 0) glGenFramebuffers(1, &fbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+        if (texture == 0) glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        // We use GL_SRGB8 to ensure we hold the gamma-corrected colors accurately
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+
+    ~ResolveBuffer() {
+        if (fbo) glDeleteFramebuffers(1, &fbo);
+        if (texture) glDeleteTextures(1, &texture);
+    }
+};
+
+// Make sure this persists between frames (static or member variable)
+static ResolveBuffer resolveFBO;
+
 void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const Uint8* audioBuf, Uint32 audioLen,
                                  const std::string& outDir, size_t fps, const std::vector<std::pair<int,int>>& resolutions) {
     if (!std::filesystem::exists(outDir)) {
@@ -1084,90 +1136,115 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
     bool saved_fullscreen = _isFullScreen;
     bool saved_stretch = this->stretch;
 
+    static std::vector<unsigned char> gammaLUT;
+    if (gammaLUT.empty()) {
+        gammaLUT.resize(256);
+        for (int i = 0; i < 256; ++i) {
+            // Convert Linear to sRGB (Gamma 2.2 approximation)
+            float v = std::pow(i / 255.0f, 1.0f / 2.2f) * 255.0f;
+            gammaLUT[i] = (unsigned char)std::min(255.0f, std::max(0.0f, v));
+        }
+    }
+
+    int w = resolutions.at(0).first;
+    int h = resolutions.at(0).second;
+
+    resolveFBO.resize(w, h);
+
+    // resize window/render target
+    this->resize(w, h);
+
+    glClearColor(0.0f, 0.0f, 0.0f, render_as_transparency ? 0.0f : 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glEnable(GL_FRAMEBUFFER_SRGB);
     // For each frame, feed audio slice and render for each resolution
     for (size_t frameIndex = 0; frameIndex < totalFrames && is_rendering; ++frameIndex) {
+
         Uint32 take = static_cast<Uint32>(std::min<double>((double)remaining, bytesPerFrame));
         if (take > 0) {
             feedPCMToProjectM(this->_projectM, ptr, take, audioSpec);
             ptr += take;
             remaining -= take;
         }
+        // render
+        glViewport(0,0,w,h);
+        // Clear the default framebuffer each frame. Use transparent clear when
+        // rendering PNGs to preserve alpha, otherwise clear to opaque black.
+        glClearColor(0.0f, 0.0f, 0.0f, render_as_transparency ? 0.0f : 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        projectm_opengl_render_frame(_projectM);
 
-        for (const auto &res : resolutions) {
-            int w = res.first;
-            int h = res.second;
-            // resize window/render target
-            this->resize(w, h);
-            // render
-            glViewport(0,0,w,h);
-            glClearColor(0,0,0,0);
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-            projectm_opengl_render_frame(_projectM);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);        // 0 = Window (Back buffer by default)
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, resolveFBO.fbo); // Our custom FBO
 
-            // ensure previous GL ops are finished and pack alignment is 1
-            glFinish();
-            glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glBlitFramebuffer(0, 0, w, h,
+                  0, 0, w, h,
+                  GL_COLOR_BUFFER_BIT, GL_NEAREST);
 
-            if (render_as_transparency)
-            {
-                // read pixels as RGBA (with alpha channel for transparency)
-                std::vector<unsigned char> pixels(w * h * 4);
-                glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+        // ensure previous GL ops are finished and pack alignment is 1
+        glFinish();
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, resolveFBO.fbo);
+        glReadBuffer(GL_COLOR_ATTACHMENT0);
 
-                // 3. Post-Process: Generate Alpha from Brightness (Luma Keying)
-                // Iterate through every pixel
-                for (size_t i = 0; i < pixels.size(); i += 4) {
-                    unsigned char r = pixels[i];
-                    unsigned char g = pixels[i + 1];
-                    unsigned char b = pixels[i + 2];
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glReadBuffer(GL_FRONT);
+        if (render_as_transparency)
+        {
+            // read pixels as RGBA (with alpha channel for transparency)
+            std::vector<unsigned char> pixels(w * h * 4);
+            glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+            // 3. Post-Process: Generate Alpha from Brightness (Luma Keying)
+            // Iterate through every pixel
+            for (size_t i = 0; i < pixels.size(); i += 4) {
+                unsigned char r = pixels[i];
+                unsigned char g = pixels[i + 1];
+                unsigned char b = pixels[i + 2];
 
-                    // Calculate brightness.
-                    // Simple method: Use the maximum value of R, G, or B.
-                    // This ensures that if a pixel is pure Red (255,0,0), it is fully opaque.
-                    // If a pixel is Black (0,0,0), Alpha becomes 0 (Transparent).
-                    unsigned char brightness = std::max({r, g, b});
+                // Calculate brightness.
+                // Simple method: Use the maximum value of R, G, or B.
+                // This ensures that if a pixel is pure Red (255,0,0), it is fully opaque.
+                // If a pixel is Black (0,0,0), Alpha becomes 0 (Transparent).
+                unsigned char brightness = std::max({r, g, b});
 
-                    // Overwrite the Alpha channel (pixels[i+3]) with the calculated brightness
-                    pixels[i + 3] = brightness;
-                }
-
-                // flip vertically because GL origin is bottom-left
-                std::vector<unsigned char> flipped(w * h * 4);
-                for (int y = 0; y < h; ++y) {
-                    memcpy(&flipped[(h - 1 - y) * w * 4], &pixels[y * w * 4], w * 4);
-                }
-
-                // write PNG using stb_image_write (preserve alpha)
-                char filename[1024];
-                snprintf(filename, sizeof(filename), "%s/%09zu.png", outDir.c_str(), frameIndex);
-                int comp = 4;  // RGBA
-                if (!stbi_write_png(filename, w, h, comp, flipped.data(), w * comp)) {
-                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to write PNG: %s", filename);
-                }
-            }
-            else
-            {
-                // read pixels
-                std::vector<unsigned char> pixels(w * h * 3);
-                glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
-
-                // flip vertically because GL origin is bottom-left
-                std::vector<unsigned char> flipped(w * h * 3);
-                for (int y = 0; y < h; ++y) {
-                    memcpy(&flipped[(h - 1 - y) * w * 3], &pixels[y * w * 3], w * 3);
-                }
-
-                // write JPEG using stb_image_write
-                char filename[1024];
-                snprintf(filename, sizeof(filename), "%s/%09zu.jpg", outDir.c_str(), frameIndex);
-                int quality = 90;
-                int comp = 3;
-                if (!stbi_write_jpg(filename, w, h, comp, flipped.data(), quality)) {
-                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to write JPEG: %s", filename);
-                }
+                // Overwrite the Alpha channel (pixels[i+3]) with the calculated brightness
+                pixels[i + 3] = brightness;
             }
 
+            // flip vertically because GL origin is bottom-left
+            std::vector<unsigned char> flipped(w * h * 4);
+            for (int y = 0; y < h; ++y) {
+                memcpy(&flipped[(h - 1 - y) * w * 4], &pixels[y * w * 4], w * 4);
+            }
+
+            // write PNG using stb_image_write (preserve alpha)
+            char filename[1024];
+            snprintf(filename, sizeof(filename), "%s/%09zu.png", outDir.c_str(), frameIndex);
+            int comp = 4;  // RGBA
+            if (!stbi_write_png(filename, w, h, comp, flipped.data(), w * comp)) {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to write PNG: %s", filename);
+            }
         }
+        else
+        {
+            // read pixels
+            std::vector<unsigned char> pixels(w * h * 3);
+            glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
+            // flip vertically because GL origin is bottom-left
+            std::vector<unsigned char> flipped(w * h * 3);
+            for (int y = 0; y < h; ++y) {
+                memcpy(&flipped[(h - 1 - y) * w * 3], &pixels[y * w * 3], w * 3);
+            }
+
+            // write JPEG using stb_image_write
+            char filename[1024];
+            snprintf(filename, sizeof(filename), "%s/%09zu.jpg", outDir.c_str(), frameIndex);
+            int quality = 100;
+            int comp = 3;
+            if (!stbi_write_jpg(filename, w, h, comp, flipped.data(), quality)) {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to write JPEG: %s", filename);
+            }
+        }
+
         // update progress (fraction of frames completed)
         if (totalFrames > 0) {
             this->render_progress.store(static_cast<float>(frameIndex + 1) / static_cast<float>(totalFrames));
@@ -1186,7 +1263,6 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
                     break;
             }
         }
-
         // Render a simple centered ImGui progress overlay so user sees progress
         {
             ImGui_ImplOpenGL2_NewFrame();
@@ -1214,6 +1290,8 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
 
         if (!is_rendering) break;
     }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     // finished (or cancelled) - restore window/render state
     if (_isFullScreen != saved_fullscreen) {

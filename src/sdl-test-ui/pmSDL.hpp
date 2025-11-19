@@ -181,6 +181,7 @@ private:
     void keyHandler(SDL_Event*);
 
     void startRendering();
+    bool pending_render_request{false};
 
     void togglePreview();
 
