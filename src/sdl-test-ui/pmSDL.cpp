@@ -1081,7 +1081,8 @@ void projectMSDL::previewAudioAndFeed(const SDL_AudioSpec& audioSpec, const Uint
 // ============================================================================
 struct ResolveBuffer {
     GLuint fbo = 0;
-    GLuint texture = 0;
+    GLuint color_texture = 0;
+    GLuint depth_texture = 0;
     int width = 0;
     int height = 0;
 
@@ -1092,21 +1093,35 @@ struct ResolveBuffer {
         if (fbo == 0) glGenFramebuffers(1, &fbo);
         glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 
-        if (texture == 0) glGenTextures(1, &texture);
-        glBindTexture(GL_TEXTURE_2D, texture);
-        // We use GL_SRGB8 to ensure we hold the gamma-corrected colors accurately
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
-
+        // Color attachment (RGB, not sRGB to avoid format issues)
+        if (color_texture == 0) glGenTextures(1, &color_texture);
+        glBindTexture(GL_TEXTURE_2D, color_texture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color_texture, 0);
+
+        // Depth attachment (needed for proper projectM rendering)
+        if (depth_texture == 0) glGenTextures(1, &depth_texture);
+        glBindTexture(GL_TEXTURE_2D, depth_texture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, w, h, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depth_texture, 0);
+
+        // Verify completeness
+        GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+        if (status != GL_FRAMEBUFFER_COMPLETE) {
+            SDL_LogError(SDL_LOG_CATEGORY_RENDER, "FBO incomplete: 0x%x", status);
+        }
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
     ~ResolveBuffer() {
         if (fbo) glDeleteFramebuffers(1, &fbo);
-        if (texture) glDeleteTextures(1, &texture);
+        if (color_texture) glDeleteTextures(1, &color_texture);
+        if (depth_texture) glDeleteTextures(1, &depth_texture);
     }
 };
 
@@ -1160,6 +1175,12 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
 
     glDisable(GL_SCISSOR_TEST);
 
+    // Initialize FBO: clear it to black before first render (frame 0)
+    glBindFramebuffer(GL_FRAMEBUFFER, resolveFBO.fbo);
+    glViewport(0, 0, w, h);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
     //glEnable(GL_FRAMEBUFFER_SRGB);
     // For each frame, feed audio slice and render for each resolution
     for (size_t frameIndex = 0; frameIndex < totalFrames && is_rendering; ++frameIndex) {
@@ -1171,38 +1192,19 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
             remaining -= take;
         }
 
-        glBindFramebuffer(GL_FRAMEBUFFER, 0); // Target Window
-        glViewport(0, 0, saved_w, saved_h);         // Target Full Window
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        if (frameIndex > 0) {
-            glBindFramebuffer(GL_READ_FRAMEBUFFER, resolveFBO.fbo);
-            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0); // Window
-            // Note: We write to the back buffer (0)
-            glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-        }
-
-        // render
-        glViewport(0,0,w,h);
-        // Clear the default framebuffer each frame. Use transparent clear when
-        // rendering PNGs to preserve alpha, otherwise clear to opaque black.
-        projectm_opengl_render_frame(_projectM);
-
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);        // 0 = Window (Back buffer by default)
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, resolveFBO.fbo); // Our custom FBO
-        glBlitFramebuffer(0, 0, w, h,
-                  0, 0, w, h,
-                  GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        // CRITICAL: Bind the 4K FBO BEFORE rendering so projectM renders at full resolution
+        glBindFramebuffer(GL_FRAMEBUFFER, resolveFBO.fbo);
+        glViewport(0, 0, w, h);
+        // NO CLEAR — preserve afterglow/history from previous frame
+        projectm_opengl_render_frame_fbo(_projectM, resolveFBO.fbo);
 
         // ensure previous GL ops are finished and pack alignment is 1
         glFinish();
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
 
+        // Read from the FBO we just rendered into
         glBindFramebuffer(GL_READ_FRAMEBUFFER, resolveFBO.fbo);
         glReadBuffer(GL_COLOR_ATTACHMENT0);
-
-        glPixelStorei(GL_PACK_ALIGNMENT, 1);
-        //glReadBuffer(GL_FRONT);
         if (render_as_transparency)
         {
             // read pixels as RGBA (with alpha channel for transparency)
@@ -1260,8 +1262,16 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
             }
         }
 
+        // Preview: Blit 4K FBO to window for live preview during render
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, resolveFBO.fbo);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0); // Window
+        glViewport(0, 0, _width, _height);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        // Blit 4K -> window (with scaling if window is smaller)
+        glBlitFramebuffer(0, 0, w, h, 0, 0, static_cast<int>(_width), static_cast<int>(_height), GL_COLOR_BUFFER_BIT, GL_LINEAR);
+
         glBindFramebuffer(GL_FRAMEBUFFER, 0); // Back to Window
-        glViewport(0, 0, _width, _height);    // Full window for UI
 
         // update progress (fraction of frames completed)
         if (totalFrames > 0) {
