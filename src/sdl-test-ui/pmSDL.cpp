@@ -313,17 +313,18 @@ void projectMSDL::keyHandler(SDL_Event* sdl_evt)
             projectm_set_beat_sensitivity(_projectM, projectm_get_beat_sensitivity(_projectM) - 0.01f);
             break;
 
+        case SDLK_KP_PLUS:
         case SDLK_PLUS:
             preset_duration_sec++;
             projectm_set_preset_duration(_projectM, preset_duration_sec);
             break;
+        case SDLK_KP_MINUS:
         case SDLK_MINUS:
             if(preset_duration_sec > 1)
             {
-                preset_duration_sec++;
+                preset_duration_sec--;
                 projectm_set_preset_duration(_projectM, preset_duration_sec);
             }
-
             break;
 
         case SDLK_SPACE:
@@ -533,7 +534,7 @@ void projectMSDL::renderFrame()
 
         if (!preset_lock)
         {
-            ImGui::BulletText("+/-: Preset dusation before transition (%f)", preset_duration_sec);
+            ImGui::BulletText("+/-: Preset duration before transition (s) (%d)", preset_duration_sec);
         }
 
         ImGui::BulletText("Space: Lock/Unlock preset (%s)", lockText.c_str());
