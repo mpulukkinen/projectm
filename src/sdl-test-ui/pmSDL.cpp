@@ -1300,7 +1300,7 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
             ImGuiIO& io = ImGui::GetIO(); (void)io;
             ImGui::SetNextWindowBgAlpha(0.35f);
             ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
-            ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+            ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always, ImVec2(0, 0));
             ImGui::Begin("Rendering", nullptr, flags);
             float prog = this->render_progress.load();
             ImGui::Text("Rendering frames: %zu / %zu", frameIndex + 1, totalFrames);
