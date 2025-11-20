@@ -1156,6 +1156,9 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
 
     // resize window/render target
     this->resize(w, h);
+
+    glDisable(GL_SCISSOR_TEST);
+
     //glEnable(GL_FRAMEBUFFER_SRGB);
     // For each frame, feed audio slice and render for each resolution
     for (size_t frameIndex = 0; frameIndex < totalFrames && is_rendering; ++frameIndex) {
@@ -1166,6 +1169,11 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
             ptr += take;
             remaining -= take;
         }
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0); // Target Window
+        glViewport(0, 0, saved_w, saved_h);         // Target Full Window
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         if (frameIndex > 0) {
             glBindFramebuffer(GL_READ_FRAMEBUFFER, resolveFBO.fbo);
@@ -1182,7 +1190,6 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
 
         glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);        // 0 = Window (Back buffer by default)
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, resolveFBO.fbo); // Our custom FBO
-
         glBlitFramebuffer(0, 0, w, h,
                   0, 0, w, h,
                   GL_COLOR_BUFFER_BIT, GL_NEAREST);
