@@ -67,6 +67,16 @@ projectMSDL::projectMSDL(SDL_GLContext glCtx, const std::string& presetPath)
 
 projectMSDL::~projectMSDL()
 {
+    // Shutdown IPC manager
+    if (ipcManager) {
+        try {
+            ipcManager->shutdown();
+        } catch (const std::exception& e) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Error shutting down IPC manager: %s\n", e.what());
+        }
+        ipcManager.reset();
+    }
+
     // Shutdown ImGui if initialized
     ImGui_ImplOpenGL2_Shutdown();
     ImGui_ImplSDL2_Shutdown();
@@ -506,6 +516,65 @@ void projectMSDL::renderFrame()
     {
         glClearColor(0.0, 0.0, 0.0, 0.0);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        // Update IPC manager with current playback timestamp and check for preset changes
+        if (ipcManager && is_previewing) {
+            try {
+                // Get current playback timestamp (in milliseconds from start of audio)
+                // Using a monotonic clock to track preview time
+                static auto preview_start_time = std::chrono::high_resolution_clock::now();
+                static bool preview_clock_initialized = false;
+
+                if (!preview_clock_initialized) {
+                    preview_start_time = std::chrono::high_resolution_clock::now();
+                    preview_clock_initialized = true;
+                }
+
+                auto current_time = std::chrono::high_resolution_clock::now();
+                auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    current_time - preview_start_time
+                ).count();
+
+                // Update audio preview timestamp
+                auto& audioPreview = ipcManager->getAudioPreview();
+                audioPreview.updateCurrentTimestamp(static_cast<uint32_t>(elapsed_ms));
+
+                // Check if there's an active preset at the current timestamp
+                auto& presetQueue = ipcManager->getPresetQueue();
+                std::string activePreset = presetQueue.getPresetAtTimestamp(static_cast<uint32_t>(elapsed_ms));
+
+                // If a preset is queued and it's different from current, load it
+                if (!activePreset.empty()) {
+                    std::string currentPresetPath = getActivePresetName();
+                    // Compare filenames to avoid redundant loads
+                    size_t last_sep_active = activePreset.find_last_of("/\\");
+                    size_t last_sep_current = currentPresetPath.find_last_of("/\\");
+                    std::string activeFilename = (last_sep_active != std::string::npos)
+                        ? activePreset.substr(last_sep_active + 1) : activePreset;
+                    std::string currentFilename = (last_sep_current != std::string::npos)
+                        ? currentPresetPath.substr(last_sep_current + 1) : currentPresetPath;
+
+                    // Load new preset if different
+                    if (activeFilename != currentFilename) {
+                        // Find preset index in playlist
+                        for (size_t i = 0; i < preset_list.size(); ++i) {
+                            std::string path = preset_list[i];
+                            size_t sep = path.find_last_of("/\\");
+                            std::string filename = (sep != std::string::npos) ? path.substr(sep + 1) : path;
+                            if (filename == activeFilename) {
+                                projectm_playlist_set_position(_playlist, static_cast<uint32_t>(i), true);
+                                projectm_set_preset_locked(_projectM, preset_lock);
+                                UpdateWindowTitle();
+                                break;
+                            }
+                        }
+                    }
+                }
+            } catch (const std::exception& e) {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "IPC preview update error: %s\n", e.what());
+            }
+        }
+
         projectm_opengl_render_frame(_projectM);
         // Dear ImGui overlay
         ImGui_ImplOpenGL2_NewFrame();

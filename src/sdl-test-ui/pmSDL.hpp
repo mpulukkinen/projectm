@@ -48,6 +48,9 @@
 #include "loopback.hpp"
 #include "setup.hpp"
 
+// IPC System for preset queue management
+#include "ipc_manager.hpp"
+
 #if defined _MSC_VER
 #include <direct.h>
 #endif
@@ -227,4 +230,7 @@ private:
     // Preset tree structure and navigation
     PresetTreeNode preset_tree;
     std::vector<PresetTreeNode*> tree_path; // breadcrumb navigation path through tree
+
+    // IPC system for preset queue management
+    std::unique_ptr<IPCManager> ipcManager{nullptr};
 };

@@ -16,6 +16,15 @@ add_executable(LvsAudioReactiveVisualizer
         projectM_SDL_main.cpp
         setup.cpp
         setup.hpp
+        # IPC System for preset queue management
+        ipc_communication.cpp
+        ipc_communication.hpp
+        preset_queue_manager.cpp
+        preset_queue_manager.hpp
+        audio_preview_manager.cpp
+        audio_preview_manager.hpp
+        ipc_manager.cpp
+        ipc_manager.hpp
         )
 
 target_link_libraries(LvsAudioReactiveVisualizer
@@ -24,6 +33,7 @@ target_link_libraries(LvsAudioReactiveVisualizer
         GLM::GLM
         SDL2::SDL2
         SDL2::SDL2main
+        JsonCpp::JsonCpp
         ${CMAKE_DL_LIBS}
         glad
         )

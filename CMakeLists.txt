@@ -159,6 +159,7 @@ if(ENABLE_EMSCRIPTEN)
 else()
     if(ENABLE_SDL_UI)
         find_package(SDL2 REQUIRED)
+        find_package(jsoncpp CONFIG REQUIRED)
 
         # Apply some fixes, as SDL2's CMake support is new and still a WiP.
         include(SDL2Target)
