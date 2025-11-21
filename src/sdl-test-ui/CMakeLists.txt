@@ -21,8 +21,6 @@ add_executable(LvsAudioReactiveVisualizer
         ipc_communication.hpp
         preset_queue_manager.cpp
         preset_queue_manager.hpp
-        audio_preview_manager.cpp
-        audio_preview_manager.hpp
         ipc_manager.cpp
         ipc_manager.hpp
         )

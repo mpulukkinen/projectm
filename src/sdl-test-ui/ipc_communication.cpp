@@ -41,19 +41,20 @@ void IPCHandler::startListening(MessageCallback callback) {
 
 void IPCHandler::stopListening() {
     isListening = false;
+
+    // Give the thread a short time to exit gracefully
     if (listenThread.joinable()) {
-        // Wait for thread with timeout (max 1 second)
-        // Use a loop to check periodically
         auto start = std::chrono::steady_clock::now();
-        while (listenThread.joinable()) {
-            listenThread.join();
-            auto elapsed = std::chrono::steady_clock::now() - start;
-            if (elapsed > std::chrono::milliseconds(1000)) {
-                // Timeout - thread didn't exit cleanly, but we must continue
-                // This is a defensive measure to prevent hangs
-                break;
-            }
+
+        // Try to join with a timeout
+        while (listenThread.joinable() && std::chrono::steady_clock::now() - start < std::chrono::milliseconds(200)) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
+        // If still joinable, detach it instead of crashing
+        if (listenThread.joinable()) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "IPC: Detaching listener thread (did not exit cleanly)");
+            listenThread.detach();
         }
     }
 }
@@ -66,7 +67,14 @@ void IPCHandler::listenThreadFunc(MessageCallback callback) {
 
     while (isListening) {
         try {
-            // Use blocking getline
+            // Check if stdin is still valid before trying to read
+            if (!std::cin.good() && std::cin.eof()) {
+                SDL_Log("IPC: stdin is closed");
+                isListening = false;
+                break;
+            }
+
+            // Use blocking getline with exception handling
             if (std::getline(std::cin, line)) {
                 consecutiveEmptyReads = 0;  // Reset counter
 
@@ -89,19 +97,22 @@ void IPCHandler::listenThreadFunc(MessageCallback callback) {
                     }
                 }
             } else {
-                // getline failed - check if it's EOF or error
+                // getline failed
                 if (std::cin.eof()) {
                     SDL_Log("IPC: stdin reached EOF");
                     isListening = false;
                     break;
                 }
 
-                // Transient error - clear and retry
-                std::cin.clear();
+                if (std::cin.fail()) {
+                    // Clear the fail bit and continue
+                    std::cin.clear();
+                }
+
                 std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
                 consecutiveEmptyReads++;
-                if (consecutiveEmptyReads > 100) {
+                if (consecutiveEmptyReads > 200) {
                     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "IPC: Too many consecutive empty reads, stopping");
                     isListening = false;
                     break;
@@ -109,8 +120,12 @@ void IPCHandler::listenThreadFunc(MessageCallback callback) {
             }
         } catch (const std::exception& e) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "IPC: Thread exception: %s", e.what());
-            isListening = false;
-            break;
+            // Don't break - just continue trying
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        } catch (...) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "IPC: Unknown thread exception");
+            // Catch all exceptions to prevent crashes
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     }
 
