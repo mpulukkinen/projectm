@@ -8,6 +8,9 @@
     {
       "name": "glew",
       "platform": "windows"
+    },
+    {
+      "name": "jsoncpp"
     }
   ],
   "default-features": [

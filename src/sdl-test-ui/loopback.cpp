@@ -16,7 +16,7 @@ bool bFirstPacket = true;
 HRESULT get_default_device(IMMDevice **ppMMDevice) {
     HRESULT hr = S_OK;
     IMMDeviceEnumerator *pMMDeviceEnumerator;
-    
+
     // activate a device enumerator
     hr = CoCreateInstance(
                           __uuidof(MMDeviceEnumerator), NULL, CLSCTX_ALL,
@@ -27,14 +27,14 @@ HRESULT get_default_device(IMMDevice **ppMMDevice) {
         ERR(L"CoCreateInstance(IMMDeviceEnumerator) failed: hr = 0x%08x", hr);
         return false;
     }
-    
+
     // get the default render endpoint
     hr = pMMDeviceEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, ppMMDevice);
     if (FAILED(hr)) {
         ERR(L"IMMDeviceEnumerator::GetDefaultAudioEndpoint failed: hr = 0x%08x", hr);
         return false;
     }
-    
+
     return S_OK;
 }
 #endif /** WASAPI_LOOPBACK */
@@ -43,13 +43,13 @@ bool initLoopback()
 {
 #ifdef WASAPI_LOOPBACK
     HRESULT hr;
-    
+
     hr = CoInitialize(NULL);
     if (FAILED(hr)) {
         ERR(L"CoInitialize failed: hr = 0x%08x", hr);
     }
-    
-    
+
+
     IMMDevice *pMMDevice(NULL);
     // open default device if not specified
     if (NULL == pMMDevice) {
@@ -58,9 +58,9 @@ bool initLoopback()
             return false;
         }
     }
-    
+
     bool bInt16 = false;
-    
+
     // activate an IAudioClient
     IAudioClient *pAudioClient;
     hr = pMMDevice->Activate(
@@ -72,7 +72,7 @@ bool initLoopback()
         ERR(L"IMMDevice::Activate(IAudioClient) failed: hr = 0x%08x", hr);
         return false;
     }
-    
+
     // get the default device periodicity
     REFERENCE_TIME hnsDefaultDevicePeriod;
     hr = pAudioClient->GetDevicePeriod(&hnsDefaultDevicePeriod, NULL);
@@ -80,7 +80,7 @@ bool initLoopback()
         ERR(L"IAudioClient::GetDevicePeriod failed: hr = 0x%08x", hr);
         return false;
     }
-    
+
     // get the default device format
     WAVEFORMATEX *pwfx;
     hr = pAudioClient->GetMixFormat(&pwfx);
@@ -88,7 +88,7 @@ bool initLoopback()
         ERR(L"IAudioClient::GetMixFormat failed: hr = 0x%08x", hr);
         return false;
     }
-    
+
     if (bInt16) {
         // coerce int-16 wave format
         // can do this in-place since we're not changing the size of the format
@@ -100,7 +100,7 @@ bool initLoopback()
                 pwfx->nBlockAlign = pwfx->nChannels * pwfx->wBitsPerSample / 8;
                 pwfx->nAvgBytesPerSec = pwfx->nBlockAlign * pwfx->nSamplesPerSec;
                 break;
-                
+
             case WAVE_FORMAT_EXTENSIBLE:
             {
                 // naked scope for case-local variable
@@ -118,16 +118,16 @@ bool initLoopback()
                 }
             }
                 break;
-                
+
             default:
                 ERR(L"Don't know how to coerce WAVEFORMATEX with wFormatTag = 0x%08x to int-16", pwfx->wFormatTag);
                 return E_UNEXPECTED;
         }
     }
-    
+
     nBlockAlign = pwfx->nBlockAlign;
     *pnFrames = 0;
-    
+
     // call IAudioClient::Initialize
     // note that AUDCLNT_STREAMFLAGS_LOOPBACK and AUDCLNT_STREAMFLAGS_EVENTCALLBACK
     // do not work together...
@@ -142,7 +142,7 @@ bool initLoopback()
         ERR(L"pAudioClient->Initialize error");
         return false;
     }
-    
+
     // activate an IAudioCaptureClient
     hr = pAudioClient->GetService(
                                   __uuidof(IAudioCaptureClient),
@@ -152,14 +152,14 @@ bool initLoopback()
         ERR(L"pAudioClient->GetService error");
         return false;
     }
-    
+
     // call IAudioClient::Start
     hr = pAudioClient->Start();
     if (FAILED(hr)) {
         ERR(L"pAudioClient->Start error");
         return false;
     }
-    
+
     bool bDone = false;
 #endif /** WASAPI_LOOPBACK */
 
@@ -192,7 +192,7 @@ bool processLoopbackFrame(projectMSDL *app) {
             BYTE *pData;
             UINT32 nNumFramesToRead;
             DWORD dwFlags;
-            
+
             hr = pAudioCaptureClient->GetBuffer(
                                                 &pData,
                                                 &nNumFramesToRead,
@@ -203,22 +203,22 @@ bool processLoopbackFrame(projectMSDL *app) {
             if (FAILED(hr)) {
                 return false;
             }
-            
+
             LONG lBytesToWrite = nNumFramesToRead * nBlockAlign;
-            
+
             /** Add the waveform data */
             projectm_pcm_add_float(app->projectM(), reinterpret_cast<float*>(pData), nNumFramesToRead, PROJECTM_STEREO);
-            
+
             *pnFrames += nNumFramesToRead;
-            
+
             hr = pAudioCaptureClient->ReleaseBuffer(nNumFramesToRead);
             if (FAILED(hr)) {
                 return false;
             }
-            
+
             bFirstPacket = false;
         }
-        
+
         if (FAILED(hr)) {
             return false;
         }

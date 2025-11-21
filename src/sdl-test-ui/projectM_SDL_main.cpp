@@ -34,6 +34,11 @@
 #include "pmSDL.hpp"
 #include <cstdlib>
 
+#ifdef _WIN32
+#include <io.h>
+#include <fcntl.h>
+#endif
+
 // audio loader helper (implemented in audio_loader.cpp)
 bool loadAudioFile(const std::string& path, SDL_AudioSpec& outSpec, Uint8** outBuf, Uint32* outLen);
 
@@ -73,6 +78,17 @@ static int mainLoop(void *userData) {
 }
 
 int main(int argc, char *argv[]) {
+    // Configure stdio for IPC before anything else
+    #ifdef _WIN32
+    _setmode(_fileno(stdin), _O_BINARY);
+    _setmode(_fileno(stdout), _O_BINARY);
+    setvbuf(stdin, nullptr, _IONBF, 0);
+    setvbuf(stdout, nullptr, _IONBF, 0);
+    #else
+    setbuf(stdin, nullptr);
+    setbuf(stdout, nullptr);
+    #endif
+
     // Parse command-line arguments
     std::string presetDir;
     std::string audioFile;
