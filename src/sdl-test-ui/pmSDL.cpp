@@ -376,7 +376,8 @@ void projectMSDL::startRendering()
         {
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Starting render (F6) to %s\n", this->cli_out_dir.c_str());
             is_rendering = true;
-            renderSequenceFromAudio(this->cli_audio_spec, this->cli_audio_buf, this->cli_audio_len, this->cli_out_dir, this->cli_render_fps ? this->cli_render_fps : this->fps(), this->cli_resolutions);
+            renderSequenceFromAudio(this->cli_audio_spec, this->cli_audio_buf, this->cli_audio_len, this->cli_out_dir,
+                this->cli_render_fps ? this->cli_render_fps : this->fps(), this->cli_resolutions);
         }
         else
         {
@@ -391,9 +392,15 @@ void projectMSDL::togglePreview()
     {
         if (this->cli_has_audio && this->cli_audio_buf && this->cli_audio_len > 0)
         {
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Previewing audio (F5)\n");
+            // Get the start timestamp from IPC if available
+            uint32_t startTimestampMs = 0;
+            if (ipcManager) {
+                startTimestampMs = ipcManager->getLastReceivedTimestamp();
+            }
+
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Previewing audio (F5) from timestamp %u ms\n", startTimestampMs);
             is_previewing = true;
-            previewAudioAndFeed(this->cli_audio_spec, this->cli_audio_buf, this->cli_audio_len);
+            previewAudioAndFeed(this->cli_audio_spec, this->cli_audio_buf, this->cli_audio_len, startTimestampMs);
         }
         else
         {
@@ -536,8 +543,6 @@ void projectMSDL::renderFrame()
                 ).count();
 
                 // Update audio preview timestamp
-                auto& audioPreview = ipcManager->getAudioPreview();
-                audioPreview.updateCurrentTimestamp(static_cast<uint32_t>(elapsed_ms));
 
                 // Check if there's an active preset at the current timestamp
                 auto& presetQueue = ipcManager->getPresetQueue();
@@ -1101,35 +1106,59 @@ static void feedPCMToProjectM(projectm_handle projectM, const Uint8* buf, Uint32
     }
 }
 
-void projectMSDL::previewAudioAndFeed(const SDL_AudioSpec& audioSpec, const Uint8* audioBuf, Uint32 audioLen) {
+void projectMSDL::previewAudioAndFeed(const SDL_AudioSpec& audioSpec, const Uint8* audioBuf, Uint32 audioLen, uint32_t startTimestampMs) {
+    // Increment generation counter to invalidate any previous threads
+    uint32_t current_gen = ++preview_generation;
+
     // Spawn a thread to progressively feed audio to projectM and optionally play via SDL audio
-    std::thread([this, audioSpec, audioBuf, audioLen]() {
-        // Try to open an audio device for playback
+    std::thread([this, audioSpec, audioBuf, audioLen, startTimestampMs, current_gen]() {
+        // Calculate byte position from timestamp
+        Uint32 bytesPerSec = audioSpec.freq * audioSpec.channels * (SDL_AUDIO_BITSIZE(audioSpec.format)/8);
+        Uint32 startByteOffset = (bytesPerSec * startTimestampMs) / 1000;
+
+        // Clamp to valid range
+        if (startByteOffset >= audioLen) {
+            startByteOffset = 0;
+        }
+
+        // Only open audio device if not already playing system audio
         SDL_AudioSpec want = audioSpec;
         SDL_AudioSpec have;
         SDL_AudioDeviceID dev = 0;
-        if (SDL_WasInit(SDL_INIT_AUDIO) == 0) {
-            SDL_Init(SDL_INIT_AUDIO);
-        }
-        dev = SDL_OpenAudioDevice(nullptr, 0, &want, &have, 0);
-        if (dev != 0) {
-            SDL_PauseAudioDevice(dev, 0);
-            SDL_QueueAudio(dev, audioBuf, audioLen);
+
+        // Check if any audio is currently being recorded/captured
+        bool captureActive = (_audioDeviceId != 0);
+
+        // Only open playback device if no capture is active
+        if (!captureActive) {
+            if (SDL_WasInit(SDL_INIT_AUDIO) == 0) {
+                SDL_Init(SDL_INIT_AUDIO);
+            }
+            dev = SDL_OpenAudioDevice(nullptr, 0, &want, &have, 0);
+            if (dev != 0) {
+                SDL_PauseAudioDevice(dev, 0);
+                SDL_QueueAudio(dev, audioBuf + startByteOffset, audioLen - startByteOffset);
+            }
         }
 
-        // Feed audio progressively per frame
-        double seconds = (double)audioLen / (audioSpec.freq * audioSpec.channels * (SDL_AUDIO_BITSIZE(audioSpec.format)/8));
-        size_t totalFrames = static_cast<size_t>(seconds * this->fps());
+        // Feed audio progressively per frame starting from the seek position
+        double totalSeconds = (double)audioLen / bytesPerSec;
+        double startSeconds = (double)startByteOffset / bytesPerSec;
+        double remainingSeconds = totalSeconds - startSeconds;
+        size_t totalFrames = static_cast<size_t>(remainingSeconds * this->fps());
         if (totalFrames == 0) totalFrames = 1;
 
-        // bytes per second
-        Uint32 bytesPerSec = audioSpec.freq * audioSpec.channels * (SDL_AUDIO_BITSIZE(audioSpec.format)/8);
         double bytesPerFrame = (double)bytesPerSec / (double)this->fps();
 
-        const Uint8* ptr = audioBuf;
-        Uint32 remaining = audioLen;
+        const Uint8* ptr = audioBuf + startByteOffset;
+        Uint32 remaining = audioLen - startByteOffset;
 
         for (size_t f = 0; f < totalFrames && remaining > 0 && is_previewing; ++f) {
+            // Check if a new preview request has superseded this one
+            if (this->preview_generation.load() != current_gen) {
+                break;
+            }
+
             Uint32 take = static_cast<Uint32>(std::min<double>((double)remaining, bytesPerFrame));
             feedPCMToProjectM(this->_projectM, ptr, take, audioSpec);
             ptr += take;
@@ -1137,7 +1166,7 @@ void projectMSDL::previewAudioAndFeed(const SDL_AudioSpec& audioSpec, const Uint
             SDL_Delay(static_cast<Uint32>(1000.0 / this->fps()));
         }
 
-        // let playback finish
+        // Close playback device
         if (dev != 0) {
             SDL_Delay(500);
             SDL_CloseAudioDevice(dev);

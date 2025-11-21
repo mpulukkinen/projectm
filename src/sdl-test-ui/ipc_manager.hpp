@@ -9,7 +9,6 @@
 
 #include "ipc_communication.hpp"
 #include "preset_queue_manager.hpp"
-#include "audio_preview_manager.hpp"
 #include <memory>
 #include <cstdint>
 
@@ -40,9 +39,6 @@ public:
     // Get the preset queue manager
     PresetQueueManager& getPresetQueue() { return presetQueue; }
 
-    // Get the audio preview manager
-    AudioPreviewManager& getAudioPreview() { return audioPreview; }
-
     // Get last received timestamp from C#
     uint64_t getLastReceivedTimestamp() const { return lastReceivedTimestampMs; }
 
@@ -55,7 +51,6 @@ public:
 private:
     std::unique_ptr<IPC::IPCHandler> ipcHandler;
     PresetQueueManager presetQueue;
-    AudioPreviewManager audioPreview;
     uint64_t lastReceivedTimestampMs;
     bool pendingStateUpdate;
 

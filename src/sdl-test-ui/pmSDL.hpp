@@ -157,7 +157,8 @@ public:
 
     // Preview audio (play) and feed projectM with PCM data for visualization
     // audioSpec/data: SDL spec and raw audio data (WAV loaded via SDL_LoadWAV)
-    void previewAudioAndFeed(const SDL_AudioSpec& audioSpec, const Uint8* audioBuf, Uint32 audioLen);
+    // startTimestampMs: start playback at this position in the audio (in milliseconds)
+    void previewAudioAndFeed(const SDL_AudioSpec& audioSpec, const Uint8* audioBuf, Uint32 audioLen, uint32_t startTimestampMs = 0);
 
     // Render frames driven by provided audio buffer and write BMP sequence to outDir
     // resolutions: vector of pair(width,height)
@@ -233,4 +234,6 @@ private:
 
     // IPC system for preset queue management
     std::unique_ptr<IPCManager> ipcManager{nullptr};
+
+    std::atomic<uint32_t> preview_generation{0};
 };

@@ -122,7 +122,6 @@ void IPCManager::handleStartPreviewMessage(const IPC::IPCMessage& msg) {
     // C# requests to start audio preview
     if (msg.data.isMember("fromTimestampMs")) {
         uint64_t fromTimestamp = msg.data["fromTimestampMs"].asUInt64();
-        audioPreview.startPreview(fromTimestamp);
 
         // TODO: Implement actual audio playback from timestamp
         // This would involve seeking the audio file/loopback to the given timestamp
@@ -131,7 +130,6 @@ void IPCManager::handleStartPreviewMessage(const IPC::IPCMessage& msg) {
 
 void IPCManager::handleStopPreviewMessage(const IPC::IPCMessage& msg) {
     // C# requests to stop audio preview
-    audioPreview.stopPreview();
 
     // TODO: Implement actual audio stop
 }
@@ -155,11 +153,4 @@ void IPCManager::sendCurrentState() {
 
 void IPCManager::sendPreviewStatusUpdate() {
     if (!ipcHandler) return;
-
-    ipcHandler->sendMessage(
-        IPC::MessageBuilder::buildPreviewStatus(
-            audioPreview.isPlaying(),
-            audioPreview.getCurrentTimestamp()
-        )
-    );
 }
