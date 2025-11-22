@@ -23,6 +23,30 @@
             "environment": [],
             "console": "integratedTerminal",
             "MIMode": "gdb"
+        },
+        {
+            "name": "LvsAudioReactiveVisualizerLinux",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/out/src/sdl-test-ui/LvsAudioReactiveVisualizer",
+            "preLaunchTask": "build-test-ui",
+            "args": [
+                "--preset-dir",
+                "/home/pulkkinen/projectm/presets/tests",
+                "--audio",
+                "/home/pulkkinen/Music/Vivid Drift.wav",
+                "--fps",
+                "30",
+                "--res",
+                "1280x768",
+                "--out-dir",
+                "/home/pulkkinen/temp"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "integratedTerminal",
+            "MIMode": "gdb"
         }
     ]
 }

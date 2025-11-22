@@ -1,0 +1,49 @@
+-- Git revision: be39d2520ce434cb789d932aa57def68f29e3df0
+-- projectM-Eval could not be found externally. Using sources from vendor dir (if present).
+-- Building for OpenGL Core Profile
+CMake Error at vendor/CMakeLists.txt:6 (add_subdirectory):
+  The source directory
+
+    /home/pulkkinen/projectm/vendor/projectm-eval
+
+  does not contain a CMakeLists.txt file.
+
+
+-- Adding Dear ImGui sources to LvsAudioReactiveVisualizer
+-- 
+-- libprojectM v4.1.0
+-- ==============================================
+-- 
+--     prefix:                      /usr/local
+--     libdir:                      lib
+--     includedir:                  include
+--     bindir:                      bin
+-- 
+--     compiler:                    /usr/bin/c++
+--     cflags:                      
+--     cxxflags:                    
+--     ldflags:                     
+-- 
+-- Features:
+-- ==============================================
+-- 
+--     Build shared libraries:      ON
+--     Filesystem support:          C++17 STL
+--     SDL2:                        ON
+--         SDL2 version:            2.30.0
+--     OpenGL ES:                   OFF
+--     Emscripten:                  OFF
+--     Use system GLM:              OFF
+--     Use system projectM-eval:    ON
+--     Link UI with shared lib:     
+-- 
+-- Targets and applications:
+-- ==============================================
+-- 
+--     libprojectM:                 (always built)
+--     Playlist library:            ON
+--     SDL2 Test UI:                ON
+--     Tests:                       OFF
+--     Documentation:               OFF
+-- 
+-- Configuring incomplete, errors occurred!

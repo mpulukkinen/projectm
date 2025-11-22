@@ -13,6 +13,7 @@
                 "--target",
                 "LvsAudioReactiveVisualizer"
             ],
+            "dependsOn": "configure",
             "group": {
                 "kind": "build",
                 "isDefault": true
@@ -24,6 +25,20 @@
                 "focus": false,
                 "panel": "shared"
             }
+        },
+        {
+            "label": "configure",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "-S",
+                ".",
+                "-B",
+                "./out",
+                "-DCMAKE_BUILD_TYPE=Debug",
+                "-DENABLE_SDL_UI=ON"
+            ],
+            "problemMatcher": []
         },
         {
             "label": "build-release",
