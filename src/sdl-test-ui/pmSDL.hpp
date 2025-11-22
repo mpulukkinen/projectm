@@ -30,11 +30,6 @@
 #include "opengl.h"
 #include <SDL2/SDL.h>
 
-// Disable LOOPBACK and FAKE audio to enable microphone input
-#ifdef _WIN32
-#define WASAPI_LOOPBACK 1
-#endif /** _WIN32 */
-#define FAKE_AUDIO 0
 // ----------------------------
 #define TEST_ALL_PRESETS 0
 #define STEREOSCOPIC_SBS 0
@@ -123,11 +118,6 @@ public:
     ~projectMSDL();
 
     void init(SDL_Window* window);
-    int openAudioInput();
-    int toggleAudioInput();
-    int initAudioInput();
-    void beginAudioCapture();
-    void endAudioCapture();
     void stretchMonitors();
     void nextMonitor();
     void toggleFullScreen();
@@ -168,16 +158,12 @@ public:
 
     bool done{false};
     bool mouseDown{false};
-    bool wasapi{false};    // Used to track if wasapi is currently active. This bool will allow us to run a WASAPI app and still toggle to microphone inputs.
-    bool fakeAudio{false}; // Used to track fake audio, so we can turn it off and on.
     bool stretch{false};   // used for toggling stretch mode
 
     SDL_GLContext _openGlContext{nullptr};
 
 private:
     static void presetSwitchedEvent(bool isHardCut, uint32_t index, void* context);
-
-    static void audioInputCallbackF32(void* userdata, unsigned char* stream, int len);
 
     void UpdateWindowTitle();
 
@@ -199,13 +185,6 @@ private:
     size_t _fps{60};
 
     bool _shuffle{false};
-
-    // audio input device characteristics
-    unsigned int _numAudioDevices{0};
-    int _curAudioDevice{0}; // SDL's device indexes are 0-based, -1 means "system default"
-    unsigned short _audioChannelsCount{0};
-    SDL_AudioDeviceID _audioDeviceId{0};
-    int _selectedAudioDevice{0};
 
     std::string _presetName; //!< Current preset name
     // CLI-provided audio and render options (set by main)

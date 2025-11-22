@@ -61,7 +61,7 @@ static int mainLoop(void *userData) {
     while (!app->done) {
         // render
         app->renderFrame();
-        processLoopbackFrame(app);
+
 
 #if UNLOCK_FPS
         advanceUnlockedFPSCounterFrame(start);
@@ -165,10 +165,7 @@ int main(int argc, char *argv[]) {
 
     // cleanup
     SDL_GL_DeleteContext(app->_openGlContext);
-#if !FAKE_AUDIO
-    if (!app->wasapi) // not currently using WASAPI, so we need to endAudioCapture.
-        app->endAudioCapture();
-#endif
+
     // free any loaded audio buffer (was allocated by loadAudioFile)
     if (wavBuf) free(wavBuf);
     delete app;

@@ -289,11 +289,6 @@ projectMSDL *setupSDLApp(const std::string& presetDir) {
 
     configureLoopback(app);
 
-#if !FAKE_AUDIO && !WASAPI_LOOPBACK
-    // get an audio input device
-    if (app->openAudioInput())
-        app->beginAudioCapture();
-#endif
 
 #if TEST_ALL_PRESETS
     testAllPresets(app);

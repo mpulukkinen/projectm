@@ -343,9 +343,6 @@ void projectMSDL::keyHandler(SDL_Event* sdl_evt)
             UpdateWindowTitle();
             break;
         case SDLK_ESCAPE:
-            // Stop any preview playback and allow cancelling a render in progress
-            is_previewing = false;
-            is_rendering = false; // render loop will check this and abort
             break;
         case SDLK_h:
             show_ui = !show_ui;
@@ -412,6 +409,7 @@ void projectMSDL::togglePreview()
         is_previewing = false;
     }
 }
+
 
 void projectMSDL::resize(unsigned int width_, unsigned int height_)
 {
@@ -887,10 +885,6 @@ void projectMSDL::init(SDL_Window* window)
     ImGui::StyleColorsDark();
     ImGui_ImplSDL2_InitForOpenGL(_sdlWindow, _openGlContext);
     ImGui_ImplOpenGL2_Init();
-
-#ifdef WASAPI_LOOPBACK
-    wasapi = true;
-#endif
 }
 
 std::string projectMSDL::getActivePresetName()
@@ -1126,19 +1120,15 @@ void projectMSDL::previewAudioAndFeed(const SDL_AudioSpec& audioSpec, const Uint
         SDL_AudioSpec have;
         SDL_AudioDeviceID dev = 0;
 
-        // Check if any audio is currently being recorded/captured
-        bool captureActive = (_audioDeviceId != 0);
-
-        // Only open playback device if no capture is active
-        if (!captureActive) {
-            if (SDL_WasInit(SDL_INIT_AUDIO) == 0) {
-                SDL_Init(SDL_INIT_AUDIO);
-            }
-            dev = SDL_OpenAudioDevice(nullptr, 0, &want, &have, 0);
-            if (dev != 0) {
-                SDL_PauseAudioDevice(dev, 0);
-                SDL_QueueAudio(dev, audioBuf + startByteOffset, audioLen - startByteOffset);
-            }
+        // Always try to open playback device for preview, even if capture is active
+        // The user explicitly requested a preview of the file
+        if (SDL_WasInit(SDL_INIT_AUDIO) == 0) {
+            SDL_Init(SDL_INIT_AUDIO);
+        }
+        dev = SDL_OpenAudioDevice(nullptr, 0, &want, &have, 0);
+        if (dev != 0) {
+            SDL_PauseAudioDevice(dev, 0);
+            SDL_QueueAudio(dev, audioBuf + startByteOffset, audioLen - startByteOffset);
         }
 
         // Feed audio progressively per frame starting from the seek position
