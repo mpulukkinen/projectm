@@ -839,6 +839,16 @@ void projectMSDL::renderFrame()
                                                 projectm_playlist_set_position(_playlist, static_cast<uint32_t>(i), true);
                                                 projectm_set_preset_locked(_projectM, preset_lock);
                                                 UpdateWindowTitle();
+
+                                                // Add to preset queue
+                                                if (ipcManager) {
+                                                    uint64_t timestamp = 0;
+                                                    if (ipcManager->getPresetQueue().getPresetCount() > 0) {
+                                                        // Default to 10 seconds after the last preset
+                                                        timestamp = ipcManager->getPresetQueue().getLatestTimestamp() + 10000;
+                                                    }
+                                                    ipcManager->getPresetQueue().addPreset(filename, timestamp);
+                                                }
                                                 break;
                                             }
                                         }
@@ -853,6 +863,11 @@ void projectMSDL::renderFrame()
             }
         }
         ImGui::End();
+
+        // Preset Queue Window
+        if (ipcManager) {
+            ipcManager->getPresetQueue().renderUI();
+        }
 
         ImGui::Render();
         ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
@@ -1180,7 +1195,7 @@ void projectMSDL::previewAudioAndFeed(const SDL_AudioSpec& audioSpec, const Uint
 
         for (size_t f = 0; f < totalFrames && remaining > 0 && is_previewing; ++f) {
             // Check if a new preview request has superseded this one
-            if (this->preview_generation.load() != current_gen || !is_previewing) {
+            if (this->preview_generation.load() != current_gen || !is_previewing || done) {
                 break;
             }
 
