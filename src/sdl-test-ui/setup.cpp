@@ -133,11 +133,7 @@ projectMSDL *setupSDLApp(const std::string& presetDir) {
     projectMSDL *app;
     seedRand();
 
-    if (!initLoopback())
-		{
-			SDL_Log("Failed to initialize audio loopback device.");
-			exit(1);
-		}
+
 
 #if UNLOCK_FPS
     setenv("vblank_mode", "0", 1);
@@ -251,13 +247,8 @@ projectMSDL *setupSDLApp(const std::string& presetDir) {
 #endif
 
     enableGLDebugOutput();
-    configureLoopback(app);
+    enableGLDebugOutput();
 
-#if !FAKE_AUDIO && !WASAPI_LOOPBACK
-    // get an audio input device
-    if (app->openAudioInput())
-        app->beginAudioCapture();
-#endif
 
 #if TEST_ALL_PRESETS
     testAllPresets(app);

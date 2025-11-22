@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #else
 #include <unistd.h>
+#include <poll.h>
 #endif
 
 namespace IPC {
@@ -74,49 +75,59 @@ void IPCHandler::listenThreadFunc(MessageCallback callback) {
                 break;
             }
 
-            // Use blocking getline with exception handling
-            if (std::getline(std::cin, line)) {
-                consecutiveEmptyReads = 0;  // Reset counter
+            // Use poll to check if data is available on stdin without blocking indefinitely
+            struct pollfd pfd = {0};
+            pfd.fd = STDIN_FILENO;
+            pfd.events = POLLIN;
 
-                if (!line.empty()) {
-                    SDL_Log("IPC: Received message: %s", line.c_str());
+            // Wait up to 100ms for data
+            int ret = poll(&pfd, 1, 100);
 
-                    try {
-                        IPCMessage msg = IPCMessage::deserialize(line);
-                        if (callback) {
-                            callback(msg);
+            if (ret > 0) {
+                if (pfd.revents & POLLIN) {
+                    // Data available, read line
+                    if (std::getline(std::cin, line)) {
+                        consecutiveEmptyReads = 0;  // Reset counter
+
+                        if (!line.empty()) {
+                            SDL_Log("IPC: Received message: %s", line.c_str());
+
+                            try {
+                                IPCMessage msg = IPCMessage::deserialize(line);
+                                if (callback) {
+                                    callback(msg);
+                                }
+                            } catch (const std::exception& e) {
+                                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "IPC: Parse error: %s", e.what());
+                                IPCMessage errorMsg = MessageBuilder::buildError(
+                                    std::string("Exception during message processing: ") + e.what()
+                                );
+                                if (callback) {
+                                    callback(errorMsg);
+                                }
+                            }
                         }
-                    } catch (const std::exception& e) {
-                        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "IPC: Parse error: %s", e.what());
-                        IPCMessage errorMsg = MessageBuilder::buildError(
-                            std::string("Exception during message processing: ") + e.what()
-                        );
-                        if (callback) {
-                            callback(errorMsg);
+                    } else {
+                        // getline failed (EOF or error)
+                         if (std::cin.eof()) {
+                            SDL_Log("IPC: stdin reached EOF");
+                            isListening = false;
+                            break;
                         }
+                        std::cin.clear();
                     }
+                } else if (pfd.revents & (POLLERR | POLLHUP)) {
+                     SDL_Log("IPC: stdin error or hangup");
+                     isListening = false;
+                     break;
                 }
+            } else if (ret == 0) {
+                // Timeout, just continue loop to check isListening
+                continue;
             } else {
-                // getline failed
-                if (std::cin.eof()) {
-                    SDL_Log("IPC: stdin reached EOF");
-                    isListening = false;
-                    break;
-                }
-
-                if (std::cin.fail()) {
-                    // Clear the fail bit and continue
-                    std::cin.clear();
-                }
-
-                std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
-                consecutiveEmptyReads++;
-                if (consecutiveEmptyReads > 200) {
-                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "IPC: Too many consecutive empty reads, stopping");
-                    isListening = false;
-                    break;
-                }
+                // Poll error
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "IPC: poll error");
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
         } catch (const std::exception& e) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "IPC: Thread exception: %s", e.what());

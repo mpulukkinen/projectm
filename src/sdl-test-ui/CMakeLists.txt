@@ -5,12 +5,8 @@ endif()
 add_executable(LvsAudioReactiveVisualizer
         ConfigFile.cpp
         ConfigFile.h
-        audioCapture.cpp
-        audioCapture.hpp
         audio_loader.cpp
         stb_image_write_impl.cpp
-        loopback.cpp
-        loopback.hpp
         pmSDL.cpp
         pmSDL.hpp
         projectM_SDL_main.cpp
