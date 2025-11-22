@@ -1,10 +1,11 @@
 #include "debug_ipc_ui.hpp"
+#include "pmSDL.hpp"
 #include "imgui.h"
 #include <string>
 
 namespace DebugIPCUI {
-
-    void render(IPCManager* ipcManager) {
+    uint64_t timeStamp = 0;
+    void render(IPCManager* ipcManager, projectMSDL* mainController) {
         if (!ipcManager) return;
 
         // Position window at top-right corner
@@ -43,27 +44,30 @@ namespace DebugIPCUI {
             }
             ImGui::SameLine();
 
-            // Button 3: Send Timestamp
-            if (ImGui::Button("Send Timestamp")) {
+            // Button 3: Send Timestamp forward
+            if (ImGui::Button("Forward 10sec")) {
                 // Simulate receiving a TIMESTAMP message
-                static uint64_t ts = 1000;
-                IPC::IPCMessage msg = IPC::MessageBuilder::buildTimestamp(ts);
+                timeStamp += 10000;
+                IPC::IPCMessage msg = IPC::MessageBuilder::buildTimestamp(timeStamp);
                 ipcManager->handleIPCMessage(msg);
-                ts += 1000;
+                mainController->togglePreview(true);
             }
 
-            // New row
-            // Button 4: Start Preview
-            if (ImGui::Button("Start Preview")) {
-                IPC::IPCMessage msg = IPC::MessageBuilder::buildStartPreview(0);
-                ipcManager->handleIPCMessage(msg);
-            }
-            ImGui::SameLine();
+            // Button 3: Send Timestamp forward
+            if (ImGui::Button("Rewind 10sec")) {
+                // Simulate receiving a TIMESTAMP message
+                if(timeStamp < 10000)
+                {
+                    timeStamp = 0;
+                }
+                else
+                {
+                    timeStamp -= 10000;
 
-            // Button 5: Stop Preview
-            if (ImGui::Button("Stop Preview")) {
-                IPC::IPCMessage msg = IPC::MessageBuilder::buildStopPreview();
+                }
+                IPC::IPCMessage msg = IPC::MessageBuilder::buildTimestamp(timeStamp);
                 ipcManager->handleIPCMessage(msg);
+                mainController->togglePreview(true);
             }
         }
         ImGui::End();

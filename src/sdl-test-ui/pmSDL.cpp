@@ -343,6 +343,9 @@ void projectMSDL::keyHandler(SDL_Event* sdl_evt)
             UpdateWindowTitle();
             break;
         case SDLK_ESCAPE:
+            // Stop any preview playback and allow cancelling a render in progress
+            is_previewing = false;
+            is_rendering = false; // render loop will check this and abort
             break;
         case SDLK_h:
             show_ui = !show_ui;
@@ -383,8 +386,12 @@ void projectMSDL::startRendering()
     }
 }
 
-void projectMSDL::togglePreview()
+void projectMSDL::togglePreview(bool restart)
 {
+    if (restart)
+    {
+        is_previewing = false;
+    }
     if (!is_previewing)
     {
         if (this->cli_has_audio && this->cli_audio_buf && this->cli_audio_len > 0)
@@ -588,7 +595,7 @@ void projectMSDL::renderFrame()
 
 #ifdef DEBUG
         if (is_previewing) {
-            DebugIPCUI::render(ipcManager.get());
+            DebugIPCUI::render(ipcManager.get(), this);
         }
 #endif
 
@@ -1153,7 +1160,7 @@ void projectMSDL::previewAudioAndFeed(const SDL_AudioSpec& audioSpec, const Uint
 
         for (size_t f = 0; f < totalFrames && remaining > 0 && is_previewing; ++f) {
             // Check if a new preview request has superseded this one
-            if (this->preview_generation.load() != current_gen) {
+            if (this->preview_generation.load() != current_gen || !is_previewing) {
                 break;
             }
 

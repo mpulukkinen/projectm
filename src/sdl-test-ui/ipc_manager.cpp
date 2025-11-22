@@ -45,12 +45,6 @@ void IPCManager::handleIPCMessage(const IPC::IPCMessage& msg) {
         case IPC::MessageType::DELETE_PRESET:
             handleDeletePresetMessage(msg);
             break;
-        case IPC::MessageType::START_PREVIEW:
-            handleStartPreviewMessage(msg);
-            break;
-        case IPC::MessageType::STOP_PREVIEW:
-            handleStopPreviewMessage(msg);
-            break;
         default:
             // Unknown message type - send error
             if (ipcHandler) {
@@ -116,22 +110,6 @@ void IPCManager::handleDeletePresetMessage(const IPC::IPCMessage& msg) {
             pendingStateUpdate = true;
         }
     }
-}
-
-void IPCManager::handleStartPreviewMessage(const IPC::IPCMessage& msg) {
-    // C# requests to start audio preview
-    if (msg.data.isMember("fromTimestampMs")) {
-        uint64_t fromTimestamp = msg.data["fromTimestampMs"].asUInt64();
-
-        // TODO: Implement actual audio playback from timestamp
-        // This would involve seeking the audio file/loopback to the given timestamp
-    }
-}
-
-void IPCManager::handleStopPreviewMessage(const IPC::IPCMessage& msg) {
-    // C# requests to stop audio preview
-
-    // TODO: Implement actual audio stop
 }
 
 void IPCManager::sendCurrentState() {
