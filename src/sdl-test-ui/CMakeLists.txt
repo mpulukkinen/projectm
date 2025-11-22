@@ -7,6 +7,8 @@ add_executable(LvsAudioReactiveVisualizer
         ConfigFile.h
         audio_loader.cpp
         stb_image_write_impl.cpp
+        debug_ipc_ui.cpp
+        debug_ipc_ui.hpp
         pmSDL.cpp
         pmSDL.hpp
         projectM_SDL_main.cpp
