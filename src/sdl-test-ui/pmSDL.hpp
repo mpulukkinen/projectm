@@ -45,6 +45,7 @@
 
 // IPC System for preset queue management
 #include "ipc_manager.hpp"
+#include "debug_ipc_ui.hpp"
 
 #if defined _MSC_VER
 #include <direct.h>

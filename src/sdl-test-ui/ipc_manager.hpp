@@ -48,18 +48,18 @@ public:
     // Mark state update as sent
     void clearPendingStateUpdate() { pendingStateUpdate = false; }
 
-private:
-    std::unique_ptr<IPC::IPCHandler> ipcHandler;
-    PresetQueueManager presetQueue;
-    uint64_t lastReceivedTimestampMs;
-    bool pendingStateUpdate;
-
     // Handle specific message types
     void handleTimestampMessage(const IPC::IPCMessage& msg);
     void handleLoadPresetMessage(const IPC::IPCMessage& msg);
     void handleDeletePresetMessage(const IPC::IPCMessage& msg);
     void handleStartPreviewMessage(const IPC::IPCMessage& msg);
     void handleStopPreviewMessage(const IPC::IPCMessage& msg);
+
+private:
+    std::unique_ptr<IPC::IPCHandler> ipcHandler;
+    PresetQueueManager presetQueue;
+    uint64_t lastReceivedTimestampMs;
+    bool pendingStateUpdate;
 };
 
 /**

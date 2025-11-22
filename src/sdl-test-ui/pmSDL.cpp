@@ -578,11 +578,19 @@ void projectMSDL::renderFrame()
             }
         }
 
+
+
         projectm_opengl_render_frame(_projectM);
         // Dear ImGui overlay
         ImGui_ImplOpenGL2_NewFrame();
         ImGui_ImplSDL2_NewFrame(_sdlWindow);
         ImGui::NewFrame();
+
+#ifdef DEBUG
+        if (is_previewing) {
+            DebugIPCUI::render(ipcManager.get());
+        }
+#endif
 
         ImGui::SetNextWindowBgAlpha(0.65f);
         // position overlay at top-left corner
