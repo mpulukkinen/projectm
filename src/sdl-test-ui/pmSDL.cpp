@@ -1123,7 +1123,7 @@ void projectMSDL::previewAudioAndFeed(const SDL_AudioSpec& audioSpec, const Uint
     std::thread([this, audioSpec, audioBuf, audioLen, startTimestampMs, current_gen]() {
         // Calculate byte position from timestamp
         Uint32 bytesPerSec = audioSpec.freq * audioSpec.channels * (SDL_AUDIO_BITSIZE(audioSpec.format)/8);
-        Uint32 startByteOffset = (bytesPerSec * startTimestampMs) / 1000;
+        Uint32 startByteOffset = (bytesPerSec * (startTimestampMs / 1000));
 
         // Clamp to valid range
         if (startByteOffset >= audioLen) {
