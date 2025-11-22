@@ -29,8 +29,6 @@ enum class MessageType {
     TIMESTAMP,                  // C# sends current timestamp
     LOAD_PRESET,               // C# sends preset name and timestamp to start playing
     DELETE_PRESET,             // C# deletes a preset from the queue
-    START_PREVIEW,             // C# starts audio preview from timestamp
-    STOP_PREVIEW,              // C# stops audio preview
 
     // C++ -> C#
     PRESET_LOADED,             // C++ confirms preset loaded
@@ -140,21 +138,6 @@ public:
         msg.type = MessageType::DELETE_PRESET;
         msg.data["presetName"] = presetName;
         msg.data["timestampMs"] = static_cast<Json::Value::Int64>(timestampMs);
-        return msg;
-    }
-
-    // C# starts audio preview from given timestamp
-    static IPCMessage buildStartPreview(uint64_t fromTimestampMs) {
-        IPCMessage msg;
-        msg.type = MessageType::START_PREVIEW;
-        msg.data["fromTimestampMs"] = static_cast<Json::Value::Int64>(fromTimestampMs);
-        return msg;
-    }
-
-    // C# stops audio preview
-    static IPCMessage buildStopPreview() {
-        IPCMessage msg;
-        msg.type = MessageType::STOP_PREVIEW;
         return msg;
     }
 

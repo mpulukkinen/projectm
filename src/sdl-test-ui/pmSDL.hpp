@@ -144,6 +144,8 @@ public:
 
     SDL_GLContext _openGlContext{nullptr};
 
+    void togglePreview(bool restart = false);
+
 private:
     static void presetSwitchedEvent(bool isHardCut, uint32_t index, void* context);
 
@@ -154,8 +156,6 @@ private:
 
     void startRendering();
     bool pending_render_request{false};
-
-    void togglePreview();
 
     projectm_handle _projectM{nullptr};
     projectm_playlist_handle _playlist{nullptr};
