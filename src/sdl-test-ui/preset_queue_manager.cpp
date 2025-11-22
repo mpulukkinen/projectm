@@ -1,4 +1,5 @@
 #include "preset_queue_manager.hpp"
+#include "imgui.h"
 
 PresetQueueManager::PresetQueueManager() {}
 
@@ -118,4 +119,55 @@ uint64_t PresetQueueManager::getLatestTimestamp() const {
 
 void PresetQueueManager::sortPresets() {
     std::sort(presets.begin(), presets.end());
+}
+
+void PresetQueueManager::renderUI() {
+    ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 350, 50), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(300, 400), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Preset Queue", nullptr)) {
+        std::lock_guard<std::mutex> lock(mutex);
+
+        if (ImGui::Button("Clear All")) {
+            presets.clear();
+        }
+
+        ImGui::Separator();
+
+        for (size_t i = 0; i < presets.size(); ++i) {
+            auto& preset = presets[i];
+            ImGui::PushID(static_cast<int>(i));
+
+            ImGui::Text("%s", preset.presetName.c_str());
+
+            // Timestamp editing
+            // First preset is always locked to 0
+            if (i == 0) {
+                ImGui::Text("Start: 0 ms (Locked)");
+            } else {
+                int ts = static_cast<int>(preset.startTimestampMs);
+                if (ImGui::InputInt("Start (ms)", &ts)) {
+                    if (ts < 0) ts = 0;
+                    // Update timestamp and re-sort
+                    // Since we are iterating, modifying the vector directly is risky if we sort immediately
+                    // But here we are just changing a value. However, sorting might invalidate iterators/indices if we were using them differently.
+                    // Since we are iterating by index, we can modify. But we need to re-sort after the loop or handle it carefully.
+                    // Simplest approach: modify, then break and re-sort (UI will update next frame)
+                    preset.startTimestampMs = static_cast<uint64_t>(ts);
+                    sortPresets();
+                    ImGui::PopID();
+                    break;
+                }
+            }
+
+            if (ImGui::Button("Remove")) {
+                presets.erase(presets.begin() + i);
+                ImGui::PopID();
+                break;
+            }
+
+            ImGui::Separator();
+            ImGui::PopID();
+        }
+    }
+    ImGui::End();
 }

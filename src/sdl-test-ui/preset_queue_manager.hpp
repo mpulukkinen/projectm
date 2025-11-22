@@ -63,6 +63,9 @@ public:
     // Get latest preset start time
     uint64_t getLatestTimestamp() const;
 
+    // Render the Preset Queue UI
+    void renderUI();
+
 private:
     mutable std::mutex mutex;
     std::vector<PresetEntry> presets;  // Always kept sorted by timestamp
