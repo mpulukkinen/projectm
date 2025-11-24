@@ -647,11 +647,22 @@ void projectMSDL::renderFrame()
             togglePreview();
         }
 
+        ImGui::SameLine();
+
+        if (ImGui::Button("Save playlist"))
+        {
+            ipcManager->sendCurrentState();
+        }
+
+        ImGui::SameLine();
+
         if(ImGui::Button("Render sequence"))
         {
             // defer start until after ImGui frame ends to avoid nested NewFrame() calls
             this->pending_render_request = true;
         }
+
+        ImGui::SameLine();
 
         if(ImGui::Button("Exit"))
         {
