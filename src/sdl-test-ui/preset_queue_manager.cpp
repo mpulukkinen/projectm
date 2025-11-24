@@ -6,13 +6,17 @@ PresetQueueManager::PresetQueueManager() {}
 void PresetQueueManager::addPreset(const std::string& presetName, uint64_t startTimestampMs) {
     std::lock_guard<std::mutex> lock(mutex);
 
-    // Check if preset already exists at this timestamp
+    // Check if ANY preset exists at this timestamp
     auto it = std::find_if(presets.begin(), presets.end(),
         [&](const PresetEntry& e) {
-            return e.presetName == presetName && e.startTimestampMs == startTimestampMs;
+            return e.startTimestampMs == startTimestampMs;
         });
 
-    if (it == presets.end()) {
+    if (it != presets.end()) {
+        // Replace existing preset at this timestamp
+        it->presetName = presetName;
+        // No need to sort as timestamp didn't change
+    } else {
         presets.emplace_back(presetName, startTimestampMs);
         sortPresets();
     }
