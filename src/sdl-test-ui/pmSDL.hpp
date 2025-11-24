@@ -147,6 +147,7 @@ public:
     void togglePreview(bool restart = false);
 
 private:
+    void updatePresetFromQueue(uint64_t timestampMs);
     static void presetSwitchedEvent(bool isHardCut, uint32_t index, void* context);
 
     void UpdateWindowTitle();
@@ -197,4 +198,6 @@ private:
     std::unique_ptr<IPCManager> ipcManager{nullptr};
 
     std::atomic<uint32_t> preview_generation{0};
+    uint64_t lastAppliedPresetTimestamp{0};
+
 };

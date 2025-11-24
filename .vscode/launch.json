@@ -6,6 +6,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/out/src/sdl-test-ui/Debug/LvsAudioReactiveVisualizer.exe",
+            "preLaunchTask": "build-test-ui",
             "args": [
                 "--preset-dir",
                 "C:\\Users\\copyhere2\\Downloads\\projectMSDL-Windows-x64-2.0-pre3\\projectMSDL\\presets",

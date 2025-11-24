@@ -42,6 +42,10 @@ public:
     // Get preset that should be playing at given timestamp
     std::string getPresetAtTimestamp(uint64_t timestampMs) const;
 
+    // Get the full entry that should be playing at given timestamp
+    // Returns empty entry (name="", ts=0) if no presets or before first preset
+    PresetEntry getActivePresetEntry(uint64_t timestampMs) const;
+
     // Get next preset after given timestamp
     std::string getNextPreset(uint64_t currentTimestampMs) const;
 
