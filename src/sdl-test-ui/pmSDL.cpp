@@ -522,6 +522,43 @@ void projectMSDL::touchDestroyAll()
     projectm_touch_destroy_all(_projectM);
 }
 
+void projectMSDL::updatePresetFromQueue(uint64_t timestampMs) {
+    if (!ipcManager) return;
+
+    auto& presetQueue = ipcManager->getPresetQueue();
+    auto activeEntry = presetQueue.getActivePresetEntry(timestampMs);
+
+    // If no active preset (e.g. before first timestamp), do nothing
+    if (activeEntry.presetName.empty()) return;
+
+    // Only switch if this specific scheduled item hasn't been applied yet
+    // This prevents constant re-triggering of the same preset
+    if (activeEntry.startTimestampMs != this->lastAppliedPresetTimestamp) {
+        std::string activePreset = activeEntry.presetName;
+
+        // Find preset index in playlist
+        // We do this search every time we need to switch, which is infrequent
+        for (size_t i = 0; i < preset_list.size(); ++i) {
+            std::string path = preset_list[i];
+            size_t sep = path.find_last_of("/\\");
+            std::string filename = (sep != std::string::npos) ? path.substr(sep + 1) : path;
+
+            if (filename == activePreset) {
+                // Found it! Switch.
+                projectm_playlist_set_position(_playlist, static_cast<uint32_t>(i), true);
+
+                // Lock it so projectM doesn't auto-switch away immediately
+                projectm_set_preset_locked(_projectM, true);
+
+                // Update our state
+                this->lastAppliedPresetTimestamp = activeEntry.startTimestampMs;
+                UpdateWindowTitle();
+                break;
+            }
+        }
+    }
+}
+
 void projectMSDL::renderFrame()
 {
     if(!is_rendering && show_ui)
@@ -550,36 +587,7 @@ void projectMSDL::renderFrame()
                 // Update audio preview timestamp
 
                 // Check if there's an active preset at the current timestamp
-                auto& presetQueue = ipcManager->getPresetQueue();
-                std::string activePreset = presetQueue.getPresetAtTimestamp(static_cast<uint32_t>(elapsed_ms));
-
-                // If a preset is queued and it's different from current, load it
-                if (!activePreset.empty()) {
-                    std::string currentPresetPath = getActivePresetName();
-                    // Compare filenames to avoid redundant loads
-                    size_t last_sep_active = activePreset.find_last_of("/\\");
-                    size_t last_sep_current = currentPresetPath.find_last_of("/\\");
-                    std::string activeFilename = (last_sep_active != std::string::npos)
-                        ? activePreset.substr(last_sep_active + 1) : activePreset;
-                    std::string currentFilename = (last_sep_current != std::string::npos)
-                        ? currentPresetPath.substr(last_sep_current + 1) : currentPresetPath;
-
-                    // Load new preset if different
-                    if (activeFilename != currentFilename) {
-                        // Find preset index in playlist
-                        for (size_t i = 0; i < preset_list.size(); ++i) {
-                            std::string path = preset_list[i];
-                            size_t sep = path.find_last_of("/\\");
-                            std::string filename = (sep != std::string::npos) ? path.substr(sep + 1) : path;
-                            if (filename == activeFilename) {
-                                projectm_playlist_set_position(_playlist, static_cast<uint32_t>(i), true);
-                                projectm_set_preset_locked(_projectM, preset_lock);
-                                UpdateWindowTitle();
-                                break;
-                            }
-                        }
-                    }
-                }
+                updatePresetFromQueue(static_cast<uint64_t>(elapsed_ms));
             } catch (const std::exception& e) {
                 SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "IPC preview update error: %s\n", e.what());
             }
@@ -822,11 +830,7 @@ void projectMSDL::renderFrame()
 
                                                 // Add to preset queue
                                                 if (ipcManager) {
-                                                    uint64_t timestamp = 0;
-                                                    if (ipcManager->getPresetQueue().getPresetCount() > 0) {
-                                                        // Default to 10 seconds after the last preset
-                                                        timestamp = ipcManager->getPresetQueue().getLatestTimestamp() + 10000;
-                                                    }
+                                                    uint64_t timestamp = ipcManager->getLastReceivedTimestamp();
                                                     ipcManager->getPresetQueue().addPreset(filename, timestamp);
                                                 }
                                                 break;
@@ -1299,6 +1303,9 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+    // Reset last applied preset timestamp for rendering
+    this->lastAppliedPresetTimestamp = 0;
+
     //glEnable(GL_FRAMEBUFFER_SRGB);
     // For each frame, feed audio slice and render for each resolution
     for (size_t frameIndex = 0; frameIndex < totalFrames && is_rendering; ++frameIndex) {
@@ -1308,6 +1315,15 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
             feedPCMToProjectM(this->_projectM, ptr, take, audioSpec);
             ptr += take;
             remaining -= take;
+        }
+
+        // Handle preset switching based on timestamp
+        if (ipcManager) {
+            // Calculate current timestamp in milliseconds
+            double current_time_sec = (double)frameIndex / (double)fps;
+            uint64_t current_time_ms = (uint64_t)(current_time_sec * 1000.0);
+
+            updatePresetFromQueue(current_time_ms);
         }
 
         // CRITICAL: Bind the 4K FBO BEFORE rendering so projectM renders at full resolution

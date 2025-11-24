@@ -60,6 +60,22 @@ std::string PresetQueueManager::getPresetAtTimestamp(uint64_t timestampMs) const
     return currentPreset;
 }
 
+PresetQueueManager::PresetEntry PresetQueueManager::getActivePresetEntry(uint64_t timestampMs) const {
+    std::lock_guard<std::mutex> lock(mutex);
+
+    PresetEntry currentEntry; // Default empty
+
+    for (const auto& preset : presets) {
+        if (preset.startTimestampMs <= timestampMs) {
+            currentEntry = preset;
+        } else {
+            break;  // Since sorted, no need to continue
+        }
+    }
+
+    return currentEntry;
+}
+
 std::string PresetQueueManager::getNextPreset(uint64_t currentTimestampMs) const {
     std::lock_guard<std::mutex> lock(mutex);
 

@@ -7,6 +7,7 @@
 #ifdef _WIN32
 #include <io.h>
 #include <fcntl.h>
+#include <windows.h>
 #else
 #include <unistd.h>
 #include <poll.h>
@@ -75,6 +76,20 @@ void IPCHandler::listenThreadFunc(MessageCallback callback) {
                 break;
             }
 
+            bool dataAvailable = false;
+
+            #ifdef _WIN32
+            HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
+            DWORD waitResult = WaitForSingleObject(hStdin, 100);
+            if (waitResult == WAIT_OBJECT_0) {
+                dataAvailable = true;
+            } else if (waitResult == WAIT_TIMEOUT) {
+                continue;
+            } else {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "IPC: WaitForSingleObject error");
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+            #else
             // Use poll to check if data is available on stdin without blocking indefinitely
             struct pollfd pfd = {0};
             pfd.fd = STDIN_FILENO;
@@ -85,37 +100,7 @@ void IPCHandler::listenThreadFunc(MessageCallback callback) {
 
             if (ret > 0) {
                 if (pfd.revents & POLLIN) {
-                    // Data available, read line
-                    if (std::getline(std::cin, line)) {
-                        consecutiveEmptyReads = 0;  // Reset counter
-
-                        if (!line.empty()) {
-                            SDL_Log("IPC: Received message: %s", line.c_str());
-
-                            try {
-                                IPCMessage msg = IPCMessage::deserialize(line);
-                                if (callback) {
-                                    callback(msg);
-                                }
-                            } catch (const std::exception& e) {
-                                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "IPC: Parse error: %s", e.what());
-                                IPCMessage errorMsg = MessageBuilder::buildError(
-                                    std::string("Exception during message processing: ") + e.what()
-                                );
-                                if (callback) {
-                                    callback(errorMsg);
-                                }
-                            }
-                        }
-                    } else {
-                        // getline failed (EOF or error)
-                         if (std::cin.eof()) {
-                            SDL_Log("IPC: stdin reached EOF");
-                            isListening = false;
-                            break;
-                        }
-                        std::cin.clear();
-                    }
+                    dataAvailable = true;
                 } else if (pfd.revents & (POLLERR | POLLHUP)) {
                      SDL_Log("IPC: stdin error or hangup");
                      isListening = false;
@@ -128,6 +113,41 @@ void IPCHandler::listenThreadFunc(MessageCallback callback) {
                 // Poll error
                 SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "IPC: poll error");
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+            #endif
+
+            if (dataAvailable) {
+                // Data available, read line
+                if (std::getline(std::cin, line)) {
+                    consecutiveEmptyReads = 0;  // Reset counter
+
+                    if (!line.empty()) {
+                        SDL_Log("IPC: Received message: %s", line.c_str());
+
+                        try {
+                            IPCMessage msg = IPCMessage::deserialize(line);
+                            if (callback) {
+                                callback(msg);
+                            }
+                        } catch (const std::exception& e) {
+                            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "IPC: Parse error: %s", e.what());
+                            IPCMessage errorMsg = MessageBuilder::buildError(
+                                std::string("Exception during message processing: ") + e.what()
+                            );
+                            if (callback) {
+                                callback(errorMsg);
+                            }
+                        }
+                    }
+                } else {
+                    // getline failed (EOF or error)
+                     if (std::cin.eof()) {
+                        SDL_Log("IPC: stdin reached EOF");
+                        isListening = false;
+                        break;
+                    }
+                    std::cin.clear();
+                }
             }
         } catch (const std::exception& e) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "IPC: Thread exception: %s", e.what());
