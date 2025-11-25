@@ -166,7 +166,7 @@ public:
     void togglePreview(bool restart = false);
 
 private:
-    void updatePresetFromQueue(uint64_t timestampMs);
+    void updatePresetFromQueue(uint64_t timestampMs, bool doTransition);
     static void presetSwitchedEvent(bool isHardCut, uint32_t index, void* context);
 
     void UpdateWindowTitle();
@@ -218,5 +218,8 @@ private:
 
     std::atomic<uint32_t> preview_generation{0};
     uint64_t lastAppliedPresetTimestamp{0};
+    bool initialPresetLoaded{false};
+    uint64_t lastPreviewedPresetTimestamp{0};
+    bool doPreviewTransition{false};
 
 };

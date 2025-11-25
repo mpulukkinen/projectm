@@ -394,6 +394,8 @@ void projectMSDL::togglePreview(bool restart)
     }
     if (!is_previewing)
     {
+        doPreviewTransition = false;
+        preview_clock_initialized = false; // reset clock on new preview start
         if (this->cli_has_audio && this->cli_audio_buf && this->cli_audio_len > 0)
         {
             // Get the start timestamp from IPC if available
@@ -522,7 +524,7 @@ void projectMSDL::touchDestroyAll()
     projectm_touch_destroy_all(_projectM);
 }
 
-void projectMSDL::updatePresetFromQueue(uint64_t timestampMs) {
+void projectMSDL::updatePresetFromQueue(uint64_t timestampMs, bool doTransition) {
     if (!ipcManager) return;
 
     auto& presetQueue = ipcManager->getPresetQueue();
@@ -533,7 +535,7 @@ void projectMSDL::updatePresetFromQueue(uint64_t timestampMs) {
 
     // Only switch if this specific scheduled item hasn't been applied yet
     // This prevents constant re-triggering of the same preset
-    if (activeEntry.startTimestampMs != this->lastAppliedPresetTimestamp) {
+    if (activeEntry.startTimestampMs != this->lastAppliedPresetTimestamp || timestampMs == 0) {
         std::string activePreset = activeEntry.presetName;
 
         // Find preset index in playlist
@@ -545,7 +547,7 @@ void projectMSDL::updatePresetFromQueue(uint64_t timestampMs) {
 
             if (filename == activePreset) {
                 // Found it! Switch.
-                projectm_playlist_set_position(_playlist, static_cast<uint32_t>(i), true);
+                projectm_playlist_set_position(_playlist, static_cast<uint32_t>(i), !doTransition);
 
                 // Lock it so projectM doesn't auto-switch away immediately
                 projectm_set_preset_locked(_projectM, true);
@@ -563,6 +565,19 @@ void projectMSDL::renderFrame()
 {
     if(!is_rendering && show_ui)
     {
+        if (!this->initialPresetLoaded && ipcManager->getPresetQueue().getAllPresets().size() > 0)
+        {
+            // Load initial preset from IPC queue if available
+            updatePresetFromQueue(0, false);
+            this->initialPresetLoaded = true;
+        }
+        else if (lastPreviewedPresetTimestamp != ipcManager->getLastReceivedTimestamp())
+        {
+            // Update preset if IPC timestamp changed
+            updatePresetFromQueue(ipcManager->getLastReceivedTimestamp(), true);
+            lastPreviewedPresetTimestamp = ipcManager->getLastReceivedTimestamp();
+        }
+
         glClearColor(0.0, 0.0, 0.0, 0.0);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -572,7 +587,7 @@ void projectMSDL::renderFrame()
                 // Get current playback timestamp (in milliseconds from start of audio)
                 // Using a monotonic clock to track preview time
                 static auto preview_start_time = std::chrono::high_resolution_clock::now();
-                static bool preview_clock_initialized = false;
+
 
                 if (!preview_clock_initialized) {
                     preview_start_time = std::chrono::high_resolution_clock::now();
@@ -587,13 +602,12 @@ void projectMSDL::renderFrame()
                 // Update audio preview timestamp
 
                 // Check if there's an active preset at the current timestamp
-                updatePresetFromQueue(static_cast<uint64_t>(elapsed_ms));
+                updatePresetFromQueue(static_cast<uint64_t>(elapsed_ms), doPreviewTransition);
+                doPreviewTransition = true;
             } catch (const std::exception& e) {
                 SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "IPC preview update error: %s\n", e.what());
             }
         }
-
-
 
         projectm_opengl_render_frame(_projectM);
         // Dear ImGui overlay
@@ -664,13 +678,18 @@ void projectMSDL::renderFrame()
 
         ImGui::SameLine();
 
-        if(ImGui::Button("Exit"))
+        if (ImGui::Button("Exit"))
         {
             done = true;
         }
 
         ImGui::Separator();
         ImGui::Text("Audio: %s", this->cli_audio_file.empty() ? "(none)" : this->cli_audio_file.c_str());
+
+        ImGui::SameLine();
+
+        ImGui::Text("Time: %dms", this->ipcManager->getLastReceivedTimestamp());
+
         ImGui::Separator();
         ImGui::Text("Presets:");
 
@@ -1317,6 +1336,7 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
     // Reset last applied preset timestamp for rendering
     this->lastAppliedPresetTimestamp = 0;
 
+    bool doTransition = false;
     //glEnable(GL_FRAMEBUFFER_SRGB);
     // For each frame, feed audio slice and render for each resolution
     for (size_t frameIndex = 0; frameIndex < totalFrames && is_rendering; ++frameIndex) {
@@ -1334,7 +1354,8 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
             double current_time_sec = (double)frameIndex / (double)fps;
             uint64_t current_time_ms = (uint64_t)(current_time_sec * 1000.0);
 
-            updatePresetFromQueue(current_time_ms);
+            updatePresetFromQueue(current_time_ms, doTransition);
+            doTransition = true;
         }
 
         // CRITICAL: Bind the 4K FBO BEFORE rendering so projectM renders at full resolution
