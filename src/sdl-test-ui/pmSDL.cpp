@@ -587,18 +587,6 @@ void projectMSDL::renderFrame()
 {
     if(!is_rendering && show_ui)
     {
-        if (!this->initialPresetLoaded && ipcManager->getPresetQueue().getAllPresets().size() > 0)
-        {
-            // Load initial preset from IPC queue if available
-            updatePresetFromQueue(0, false);
-            this->initialPresetLoaded = true;
-        }
-        else if (lastPreviewedPresetTimestamp != ipcManager->getLastReceivedTimestamp())
-        {
-            // Update preset if IPC timestamp changed
-            updatePresetFromQueue(ipcManager->getLastReceivedTimestamp(), true);
-            lastPreviewedPresetTimestamp = ipcManager->getLastReceivedTimestamp();
-        }
 
         glClearColor(0.0, 0.0, 0.0, 0.0);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -621,6 +609,8 @@ void projectMSDL::renderFrame()
                     current_time - preview_start_time
                 ).count();
 
+                elapsed_ms += this->ipcManager->getLastReceivedTimestamp();
+
                 // Update audio preview timestamp
 
                 // Check if there's an active preset at the current timestamp
@@ -629,6 +619,13 @@ void projectMSDL::renderFrame()
             } catch (const std::exception& e) {
                 SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "IPC preview update error: %s\n", e.what());
             }
+        }
+        else if (lastPreviewedPresetTimestamp != ipcManager->getLastReceivedTimestamp() || !isInitialPresetLoaded)
+        {
+            // Update preset if IPC timestamp changed
+            updatePresetFromQueue(ipcManager->getLastReceivedTimestamp(), true);
+            lastPreviewedPresetTimestamp = ipcManager->getLastReceivedTimestamp();
+            isInitialPresetLoaded = true;
         }
 
         projectm_opengl_render_frame(_projectM);
