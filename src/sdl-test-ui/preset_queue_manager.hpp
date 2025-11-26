@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <chrono>
 
+class IPCManager;
+
 /**
  * Manages preset scheduling with timestamps
  * Presets are ordered by their start timestamps
@@ -28,7 +30,7 @@ public:
         }
     };
 
-    PresetQueueManager();
+    PresetQueueManager(IPCManager& ipcMgr);
 
     // Add a preset to the queue at specified timestamp
     void addPreset(const std::string& presetName, uint64_t startTimestampMs);
@@ -73,6 +75,7 @@ public:
 private:
     mutable std::mutex mutex;
     std::vector<PresetEntry> presets;  // Always kept sorted by timestamp
+    IPCManager& ipcManager;
 
     // Helper to maintain sorted order
     void sortPresets();

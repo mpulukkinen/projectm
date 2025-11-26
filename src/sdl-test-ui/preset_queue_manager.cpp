@@ -1,7 +1,10 @@
 #include "preset_queue_manager.hpp"
 #include "imgui.h"
+#include "ipc_manager.hpp"
 
-PresetQueueManager::PresetQueueManager() {}
+PresetQueueManager::PresetQueueManager(IPCManager& ipcMgr): ipcManager(ipcMgr)
+{
+}
 
 void PresetQueueManager::addPreset(const std::string& presetName, uint64_t startTimestampMs) {
     std::lock_guard<std::mutex> lock(mutex);
@@ -183,6 +186,13 @@ void PresetQueueManager::renderUI() {
                 presets.erase(presets.begin() + i);
                 ImGui::PopID();
                 break;
+            }
+
+            ImGui::SameLine();
+
+            if (ImGui::Button("Jump to time")) {
+
+                ipcManager.setLastReceivedTimestamp(preset.startTimestampMs);
             }
 
             ImGui::Separator();

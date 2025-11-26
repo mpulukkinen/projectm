@@ -55,6 +55,11 @@ public:
     void handleStartPreviewMessage(const IPC::IPCMessage& msg);
     void handleStopPreviewMessage(const IPC::IPCMessage& msg);
 
+    void setLastReceivedTimestamp(uint64_t timestamp) {
+        lastReceivedTimestampMs = timestamp;
+        pendingStateUpdate = true;
+    }
+
 private:
     std::unique_ptr<IPC::IPCHandler> ipcHandler;
     PresetQueueManager presetQueue;
