@@ -4,7 +4,8 @@
 
 IPCManager::IPCManager()
     : lastReceivedTimestampMs(0)
-    , pendingStateUpdate(false)
+    , pendingStateUpdate(false),
+      presetQueue(*this)
 {
 }
 
@@ -60,8 +61,7 @@ void IPCManager::handleIPCMessage(const IPC::IPCMessage& msg) {
 void IPCManager::handleTimestampMessage(const IPC::IPCMessage& msg) {
     // C# sends current timestamp - store it
     if (msg.data.isMember("timestampMs")) {
-        lastReceivedTimestampMs = msg.data["timestampMs"].asUInt64();
-        pendingStateUpdate = true;
+        setLastReceivedTimestamp(msg.data["timestampMs"].asUInt64());
     }
 }
 
