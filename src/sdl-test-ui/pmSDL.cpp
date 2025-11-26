@@ -371,6 +371,7 @@ void projectMSDL::startRendering()
     if (!is_rendering)
     {
         is_previewing = false; // stop preview if running
+        ipcManager->pendingStateUpdate = true;
         projectm_set_preset_locked(_projectM, preset_lock);
         if (this->cli_has_audio && this->cli_audio_buf && this->cli_audio_len > 0 && !this->cli_out_dir.empty() && !this->cli_resolutions.empty())
         {

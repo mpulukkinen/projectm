@@ -60,11 +60,13 @@ public:
         pendingStateUpdate = true;
     }
 
+    bool pendingStateUpdate;
+
 private:
     std::unique_ptr<IPC::IPCHandler> ipcHandler;
     PresetQueueManager presetQueue;
     uint64_t lastReceivedTimestampMs;
-    bool pendingStateUpdate;
+
 };
 
 /**
