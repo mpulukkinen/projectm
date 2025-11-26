@@ -754,6 +754,7 @@ void projectMSDL::renderFrame()
                                 bool is_selected = (current_pos == presetIndex);
 
                                 if (ImGui::Selectable(name.c_str(), is_selected, 0, ImVec2(colWidth, 0))) {
+                                    presetClicked(presetIndex);
                                     projectm_playlist_set_position(_playlist, static_cast<uint32_t>(presetIndex), true);
                                     projectm_set_preset_locked(_projectM, preset_lock);
                                     UpdateWindowTitle();
@@ -851,15 +852,7 @@ void projectMSDL::renderFrame()
                                             size_t last_sep = path.find_last_of("/\\");
                                             std::string filename = (last_sep != std::string::npos) ? path.substr(last_sep + 1) : path;
                                             if (filename == item.first) {
-                                                projectm_playlist_set_position(_playlist, static_cast<uint32_t>(i), true);
-                                                projectm_set_preset_locked(_projectM, preset_lock);
-                                                UpdateWindowTitle();
-
-                                                // Add to preset queue
-                                                if (ipcManager) {
-                                                    uint64_t timestamp = ipcManager->getLastReceivedTimestamp();
-                                                    ipcManager->getPresetQueue().addPreset(filename, timestamp);
-                                                }
+                                                presetClicked(i);
                                                 break;
                                             }
                                         }
@@ -931,6 +924,20 @@ void projectMSDL::renderFrame()
             this->pending_render_request = false;
             startRendering();
         }
+    }
+}
+
+void projectMSDL::presetClicked(size_t i)
+{
+    projectm_playlist_set_position(_playlist, static_cast<uint32_t>(i), true);
+    projectm_set_preset_locked(_projectM, preset_lock);
+    UpdateWindowTitle();
+
+    // Add to preset queue
+    if (ipcManager)
+    {
+        uint64_t timestamp = ipcManager->getLastReceivedTimestamp();
+        ipcManager->getPresetQueue().addPreset(preset_list[i], timestamp);
     }
 }
 
