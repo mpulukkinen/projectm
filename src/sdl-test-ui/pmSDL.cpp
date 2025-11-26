@@ -564,7 +564,12 @@ void projectMSDL::updatePresetFromQueue(uint64_t timestampMs, bool doTransition)
 
 void projectMSDL::renderFrame()
 {
-    if(!is_rendering && show_ui)
+    if (ipcManager && ipcManager->pendingStateUpdate) {
+        ipcManager->sendCurrentState();
+        ipcManager->pendingStateUpdate = false;
+    }
+
+    if (!is_rendering && show_ui)
     {
 
         glClearColor(0.0, 0.0, 0.0, 0.0);
