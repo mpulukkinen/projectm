@@ -109,6 +109,8 @@ public:
     void touchDestroy(float x, float y);
     void touchDestroyAll();
     void renderFrame();
+    void presetClicked(size_t i);
+    void addPresetToPlaylist(size_t presetIndex);
     void pollEvent();
     bool keymod = false;
     std::string getActivePresetName();
