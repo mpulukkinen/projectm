@@ -160,7 +160,10 @@ void PresetQueueManager::renderUI() {
             auto& preset = presets[i];
             ImGui::PushID(static_cast<int>(i));
 
-            ImGui::Text("%s", preset.presetName.c_str());
+            size_t last_sep = preset.presetName.find_last_of("/\\");
+            std::string fname = (last_sep != std::string::npos) ? preset.presetName.substr(last_sep + 1) : preset.presetName;
+
+            ImGui::Text("%s", fname.c_str());
 
             // Timestamp editing
             // First preset is always locked to 0
