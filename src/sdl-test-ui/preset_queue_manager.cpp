@@ -194,7 +194,6 @@ void PresetQueueManager::renderUI() {
             ImGui::SameLine();
 
             if (ImGui::Button("Jump to time")) {
-
                 ipcManager.setLastReceivedTimestamp(preset.startTimestampMs);
             }
 
