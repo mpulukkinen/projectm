@@ -8,7 +8,7 @@
 
 ![Logo](https://github.com/projectM-visualizer/projectm/raw/master/docs/web/logo.png)
 
-## projectM - The most advanced open-source music visualizer, SOON INCLUDED IN LYRIC VIDEO STUDIO
+## projectM - The most advanced open-source music visualizer, NOW INCLUDED IN LYRIC VIDEO STUDIO
 
 **Check out the [Lyric Video Studio](https://lyricvideo.studio), powerful and advanced video editor, infused with ai. LVS also includes fragment shaders and
 with projectM, you can create audio reactive backgrounds more easily!!!**
