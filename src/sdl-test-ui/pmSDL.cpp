@@ -52,6 +52,11 @@ auto dispatchLoadProc(const char* name, void* userData) -> void*
 }
 } // namespace
 
+// Helper to reset the preview clock when jumping to a time
+static void resetPreviewClock() {
+    preview_clock_initialized = false;
+}
+
 projectMSDL::projectMSDL(SDL_GLContext glCtx, const std::string& presetPath)
     : _openGlContext(glCtx)
     , _projectM(projectm_create_with_opengl_load_proc(&dispatchLoadProc, nullptr))
@@ -436,6 +441,11 @@ void projectMSDL::resize(unsigned int width_, unsigned int height_)
     projectm_set_window_size(_projectM, _width, _height);
 }
 
+void projectMSDL::resetPreviewClock()
+{
+    ::resetPreviewClock();
+}
+
 void projectMSDL::pollEvent()
 {
     SDL_Event evt;
@@ -576,40 +586,48 @@ void projectMSDL::renderFrame()
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // Update IPC manager with current playback timestamp and check for preset changes
-        if (ipcManager && is_previewing) {
-            try {
-                // Get current playback timestamp (in milliseconds from start of audio)
-                // Using a monotonic clock to track preview time
-                static auto preview_start_time = std::chrono::high_resolution_clock::now();
-
-
-                if (!preview_clock_initialized) {
-                    preview_start_time = std::chrono::high_resolution_clock::now();
-                    preview_clock_initialized = true;
-                }
-
-                auto current_time = std::chrono::high_resolution_clock::now();
-                auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    current_time - preview_start_time
-                ).count();
-
-                elapsed_ms += this->ipcManager->getLastReceivedTimestamp();
-
-                // Update audio preview timestamp
-
-                // Check if there's an active preset at the current timestamp
-                updatePresetFromQueue(static_cast<uint64_t>(elapsed_ms), doPreviewTransition);
-                doPreviewTransition = true;
-            } catch (const std::exception& e) {
-                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "IPC preview update error: %s\n", e.what());
+        if (ipcManager) {
+            // Check if we need to reset the preview clock (e.g., when jumping to a time)
+            if (ipcManager->needsPreviewClockReset) {
+                resetPreviewClock();
+                ipcManager->needsPreviewClockReset = false;
             }
-        }
-        else if (lastPreviewedPresetTimestamp != ipcManager->getLastReceivedTimestamp() || !isInitialPresetLoaded)
-        {
-            // Update preset if IPC timestamp changed
-            updatePresetFromQueue(ipcManager->getLastReceivedTimestamp(), true);
-            lastPreviewedPresetTimestamp = ipcManager->getLastReceivedTimestamp();
-            isInitialPresetLoaded = true;
+
+            if (is_previewing) {
+                try {
+                    // Get current playback timestamp (in milliseconds from start of audio)
+                    // Using a monotonic clock to track preview time
+                    static auto preview_start_time = std::chrono::high_resolution_clock::now();
+
+
+                    if (!preview_clock_initialized) {
+                        preview_start_time = std::chrono::high_resolution_clock::now();
+                        preview_clock_initialized = true;
+                    }
+
+                    auto current_time = std::chrono::high_resolution_clock::now();
+                    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        current_time - preview_start_time
+                    ).count();
+
+                    elapsed_ms += this->ipcManager->getLastReceivedTimestamp();
+
+                    // Update audio preview timestamp
+
+                    // Check if there's an active preset at the current timestamp
+                    updatePresetFromQueue(static_cast<uint64_t>(elapsed_ms), doPreviewTransition);
+                    doPreviewTransition = true;
+                } catch (const std::exception& e) {
+                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "IPC preview update error: %s\n", e.what());
+                }
+            }
+            else if (lastPreviewedPresetTimestamp != ipcManager->getLastReceivedTimestamp() || !isInitialPresetLoaded)
+            {
+                // Update preset if IPC timestamp changed
+                updatePresetFromQueue(ipcManager->getLastReceivedTimestamp(), true);
+                lastPreviewedPresetTimestamp = ipcManager->getLastReceivedTimestamp();
+                isInitialPresetLoaded = true;
+            }
         }
 
         projectm_opengl_render_frame(_projectM);
@@ -1127,7 +1145,7 @@ std::vector<std::string> projectMSDL::listPresets() {
 
 void projectMSDL::UpdateWindowTitle()
 {
-    std::string title = "projectM ➫ " + _presetName;
+    std::string title = "Lyric Video Studio - Milkdrop Visualizer ➫ " + _presetName;
     if (projectm_get_preset_locked(_projectM))
     {
         title.append(" [locked]");

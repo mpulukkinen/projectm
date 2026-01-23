@@ -58,9 +58,11 @@ public:
     void setLastReceivedTimestamp(uint64_t timestamp) {
         lastReceivedTimestampMs = timestamp;
         pendingStateUpdate = true;
+        needsPreviewClockReset = true;  // Signal that preview clock should be reset
     }
 
     bool pendingStateUpdate;
+    bool needsPreviewClockReset{false};
 
 private:
     std::unique_ptr<IPC::IPCHandler> ipcHandler;

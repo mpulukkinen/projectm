@@ -167,6 +167,9 @@ public:
 
     void togglePreview(bool restart = false);
 
+    // Reset preview clock (used when jumping to a time)
+    void resetPreviewClock();
+
 private:
     void updatePresetFromQueue(uint64_t timestampMs, bool doTransition);
     static void presetSwitchedEvent(bool isHardCut, uint32_t index, void* context);

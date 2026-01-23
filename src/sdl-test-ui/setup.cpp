@@ -200,7 +200,7 @@ projectMSDL *setupSDLApp(const std::string& presetDir) {
 
     initGL();
 
-    SDL_Window *win = SDL_CreateWindow("projectM", 0, 0, width, height, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+    SDL_Window *win = SDL_CreateWindow("Lyric Video Studio - Milkdrop Visualizer", 0, 0, width, height, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
     SDL_GL_GetDrawableSize(win,&width,&height);
 
     initStereoscopicView(win);
