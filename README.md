@@ -1,12 +1,6 @@
-[![Windows Build Status](https://github.com/projectM-visualizer/projectm/actions/workflows/build_windows.yml/badge.svg?branch=master)](https://github.com/projectM-visualizer/projectm/actions/workflows/build_windows.yml)
-[![Linux Build Status](https://github.com/projectM-visualizer/projectm/actions/workflows/build_linux.yml/badge.svg?branch=master)](https://github.com/projectM-visualizer/projectm/actions/workflows/build_linux.yml)
-[![macOS Build Status](https://github.com/projectM-visualizer/projectm/actions/workflows/build_osx.yml/badge.svg?branch=master)](https://github.com/projectM-visualizer/projectm/actions/workflows/build_osx.yml)
-[![Emscripten Build Status](https://github.com/projectM-visualizer/projectm/actions/workflows/build_emscripten.yml/badge.svg?branch=master)](https://github.com/projectM-visualizer/projectm/actions/workflows/build_emscripten.yml)
-[![Android Build Status](https://github.com/projectM-visualizer/projectm/actions/workflows/build_android.yml/badge.svg?branch=master)](https://github.com/projectM-visualizer/projectm/actions/workflows/build_android.yml)
-
-![Discord Shield](https://discordapp.com/api/guilds/737206408482914387/widget.png?style=shield) [Chat with us on Discord](https://discord.gg/N9DyQfCH4j)
 
 ![Logo](https://github.com/projectM-visualizer/projectm/raw/master/docs/web/logo.png)
+![Logo](https://lyricvideo.studio/wp-content/uploads/2025/06/logo_200px-150x150.avif)
 
 ## projectM - The most advanced open-source music visualizer, NOW INCLUDED IN LYRIC VIDEO STUDIO
 
