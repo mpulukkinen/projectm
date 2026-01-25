@@ -22,6 +22,7 @@
 *
 * pmSDL.cpp
 * Authors: Created by Mischa Spiegelmock on 2017-09-18.
+* Modified by Matti Pulkkinen, 2025-2026
 *
 *
 * experimental Stereoscopic SBS driver functionality by
@@ -549,14 +550,51 @@ void projectMSDL::updatePresetFromQueue(uint64_t timestampMs, bool doTransition)
     if (activeEntry.startTimestampMs != this->lastAppliedPresetTimestamp || timestampMs == 0) {
         std::string activePreset = activeEntry.presetName;
 
-        // Find preset index in playlist
+        // Find preset index in playlist with robust path matching
         // We do this search every time we need to switch, which is infrequent
         for (size_t i = 0; i < preset_list.size(); ++i) {
             std::string path = preset_list[i];
-            size_t sep = path.find_last_of("/\\");
-            std::string filename = (sep != std::string::npos) ? path.substr(sep + 1) : path;
 
-            if (filename == activePreset) {
+            // Extract filename from both paths for comparison
+            size_t sep = path.find_last_of("/\\");
+            std::string pathFilename = (sep != std::string::npos) ? path.substr(sep + 1) : path;
+
+            size_t activeSep = activePreset.find_last_of("/\\");
+            std::string activeFilename = (activeSep != std::string::npos) ? activePreset.substr(activeSep + 1) : activePreset;
+
+            // First try exact filename match
+            bool isMatch = (pathFilename == activeFilename);
+
+            // If not matched by filename, try path suffix matching
+            // This handles cases where activePreset is "folder/preset.milk" and path is "/full/path/to/folder/preset.milk"
+            if (!isMatch && activePreset.find_last_of("/\\") != std::string::npos) {
+                // Normalize paths: convert backslashes to forward slashes for consistent comparison
+                std::string normalizedPath = path;
+                std::string normalizedActive = activePreset;
+                std::replace(normalizedPath.begin(), normalizedPath.end(), '\\', '/');
+                std::replace(normalizedActive.begin(), normalizedActive.end(), '\\', '/');
+
+                // Check if the path ends with the active preset (relative path match)
+                if (normalizedPath.length() >= normalizedActive.length()) {
+                    size_t pos = normalizedPath.length() - normalizedActive.length();
+                    isMatch = (normalizedPath.substr(pos) == normalizedActive);
+                }
+            }
+
+            // Also try reverse: check if active preset is a suffix that matches full path
+            if (!isMatch && path.find_last_of("/\\") != std::string::npos) {
+                std::string normalizedPath = path;
+                std::string normalizedActive = activePreset;
+                std::replace(normalizedPath.begin(), normalizedPath.end(), '\\', '/');
+                std::replace(normalizedActive.begin(), normalizedActive.end(), '\\', '/');
+
+                if (normalizedActive.length() >= normalizedPath.length()) {
+                    size_t pos = normalizedActive.length() - normalizedPath.length();
+                    isMatch = (normalizedActive.substr(pos) == normalizedPath);
+                }
+            }
+
+            if (isMatch) {
                 // Found it! Switch.
                 projectm_playlist_set_position(_playlist, static_cast<uint32_t>(i), !doTransition);
 
@@ -593,6 +631,9 @@ void projectMSDL::renderFrame()
                 ipcManager->needsPreviewClockReset = false;
             }
 
+            // Check if timestamp was changed externally (e.g., by "Jump to time" button)
+            bool timestampChanged = (lastPreviewedPresetTimestamp != ipcManager->getLastReceivedTimestamp());
+
             if (is_previewing) {
                 try {
                     // Get current playback timestamp (in milliseconds from start of audio)
@@ -617,11 +658,16 @@ void projectMSDL::renderFrame()
                     // Check if there's an active preset at the current timestamp
                     updatePresetFromQueue(static_cast<uint64_t>(elapsed_ms), doPreviewTransition);
                     doPreviewTransition = true;
+
+                    // Update lastPreviewedPresetTimestamp when timestamp changed externally
+                    if (timestampChanged) {
+                        lastPreviewedPresetTimestamp = ipcManager->getLastReceivedTimestamp();
+                    }
                 } catch (const std::exception& e) {
                     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "IPC preview update error: %s\n", e.what());
                 }
             }
-            else if (lastPreviewedPresetTimestamp != ipcManager->getLastReceivedTimestamp() || !isInitialPresetLoaded)
+            else if (timestampChanged || !isInitialPresetLoaded)
             {
                 // Update preset if IPC timestamp changed
                 updatePresetFromQueue(ipcManager->getLastReceivedTimestamp(), true);
