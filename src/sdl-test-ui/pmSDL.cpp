@@ -545,8 +545,7 @@ void projectMSDL::updatePresetFromQueue(uint64_t timestampMs, bool doTransition)
 
     auto& presetQueue = ipcManager->getPresetQueue();
     // Shift timestamp by sessionStartOffsetMs so preset schedule aligns with session offset
-    uint64_t shiftedTimestamp = timestampMs - ipcManager->getSessionStartOffsetMs();
-    auto activeEntry = presetQueue.getActivePresetEntry(shiftedTimestamp);
+    auto activeEntry = presetQueue.getActivePresetEntry(timestampMs);
 
     // If no active preset (e.g. before first timestamp), do nothing
     if (activeEntry.presetName.empty()) return;
