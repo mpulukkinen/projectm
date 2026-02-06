@@ -191,7 +191,7 @@ public:
     static IPCMessage buildStartOffset(uint64_t startOffsetMs) {
         IPCMessage msg;
         msg.type = MessageType::START_OFFSET;
-        msg.data["startOffsetMs"] = static_cast<Json::Value::Int64>(startOffsetMs);
+        msg.data["timestampMs"] = static_cast<Json::Value::Int64>(startOffsetMs);
         return msg;
     }
 
@@ -199,7 +199,7 @@ public:
     static IPCMessage buildLength(uint64_t lengthMs) {
         IPCMessage msg;
         msg.type = MessageType::LENGTH;
-        msg.data["lengthMs"] = static_cast<Json::Value::Int64>(lengthMs);
+        msg.data["timestampMs"] = static_cast<Json::Value::Int64>(lengthMs);
         return msg;
     }
 };
