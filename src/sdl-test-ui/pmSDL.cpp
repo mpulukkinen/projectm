@@ -1468,6 +1468,9 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
                 SDL_Log("Render: session length reached (%llu ms), stopping.", ipcManager->getSessionLengthMs());
                 break;
             }
+
+            updatePresetFromQueue(session_time_ms, doTransition);
+            doTransition = true;
         }
 
         // CRITICAL: Bind the 4K FBO BEFORE rendering so projectM renders at full resolution
@@ -1543,7 +1546,7 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
         // Preview: Blit 4K FBO to window for live preview during render
         glBindFramebuffer(GL_READ_FRAMEBUFFER, resolveFBO.fbo);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0); // Window
-        glViewport(0, 0, static_cast<GLsizei>(_width), static_cast<GLsizei>(_height));
+        glViewport(0, 0, _width, _height);
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         // Blit 4K -> window (with scaling if window is smaller)
