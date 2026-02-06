@@ -2,7 +2,9 @@
 #include <iostream>
 #include <thread>
 #include <chrono>
+#include <cstdarg>
 #include <SDL_log.h>
+#include <fstream>
 
 #ifdef _WIN32
 #include <io.h>
@@ -12,6 +14,18 @@
 #include <unistd.h>
 #include <poll.h>
 #endif
+
+// Helper to log to both SDL_Log and stderr for better visibility
+static void ipcLog(const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    char buffer[1024];
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+    SDL_Log("%s", buffer);
+    fprintf(stderr, "IPC: %s\n", buffer);
+    fflush(stderr);
+}
 
 namespace IPC {
 
@@ -36,7 +50,7 @@ void IPCHandler::startListening(MessageCallback callback) {
     setbuf(stdout, nullptr);
     #endif
 
-    SDL_Log("IPC: Starting listener thread");
+    ipcLog("IPC: Starting listener thread");
     isListening = true;
     listenThread = std::thread(&IPCHandler::listenThreadFunc, this, callback);
 }
@@ -62,7 +76,7 @@ void IPCHandler::stopListening() {
 }
 
 void IPCHandler::listenThreadFunc(MessageCallback callback) {
-    SDL_Log("IPC: Listening thread started");
+    ipcLog("IPC: Listening thread started");
 
     std::string line;
     int consecutiveEmptyReads = 0;
@@ -71,7 +85,7 @@ void IPCHandler::listenThreadFunc(MessageCallback callback) {
         try {
             // Check if stdin is still valid before trying to read
             if (!std::cin.good() && std::cin.eof()) {
-                SDL_Log("IPC: stdin is closed");
+                ipcLog("IPC: stdin is closed");
                 isListening = false;
                 break;
             }
@@ -86,7 +100,7 @@ void IPCHandler::listenThreadFunc(MessageCallback callback) {
             } else if (waitResult == WAIT_TIMEOUT) {
                 continue;
             } else {
-                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "IPC: WaitForSingleObject error");
+            ipcLog("IPC: WaitForSingleObject error");
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
             #else
@@ -102,7 +116,7 @@ void IPCHandler::listenThreadFunc(MessageCallback callback) {
                 if (pfd.revents & POLLIN) {
                     dataAvailable = true;
                 } else if (pfd.revents & (POLLERR | POLLHUP)) {
-                     SDL_Log("IPC: stdin error or hangup");
+                     ipcLog("IPC: stdin error or hangup");
                      isListening = false;
                      break;
                 }
@@ -111,7 +125,7 @@ void IPCHandler::listenThreadFunc(MessageCallback callback) {
                 continue;
             } else {
                 // Poll error
-                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "IPC: poll error");
+            ipcLog("IPC: poll error");
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
             #endif
@@ -122,7 +136,7 @@ void IPCHandler::listenThreadFunc(MessageCallback callback) {
                     consecutiveEmptyReads = 0;  // Reset counter
 
                     if (!line.empty()) {
-                        SDL_Log("IPC: Received message: %s", line.c_str());
+                        ipcLog("IPC: Received message: %s", line.c_str());
 
                         try {
                             IPCMessage msg = IPCMessage::deserialize(line);
@@ -130,7 +144,7 @@ void IPCHandler::listenThreadFunc(MessageCallback callback) {
                                 callback(msg);
                             }
                         } catch (const std::exception& e) {
-                            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "IPC: Parse error: %s", e.what());
+                            ipcLog("IPC: Parse error: %s", e.what());
                             IPCMessage errorMsg = MessageBuilder::buildError(
                                 std::string("Exception during message processing: ") + e.what()
                             );
@@ -142,7 +156,7 @@ void IPCHandler::listenThreadFunc(MessageCallback callback) {
                 } else {
                     // getline failed (EOF or error)
                      if (std::cin.eof()) {
-                        SDL_Log("IPC: stdin reached EOF");
+                        ipcLog("IPC: stdin reached EOF");
                         isListening = false;
                         break;
                     }
@@ -150,23 +164,23 @@ void IPCHandler::listenThreadFunc(MessageCallback callback) {
                 }
             }
         } catch (const std::exception& e) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "IPC: Thread exception: %s", e.what());
+            ipcLog("IPC: Thread exception: %s", e.what());
             // Don't break - just continue trying
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         } catch (...) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "IPC: Unknown thread exception");
+            ipcLog("IPC: Unknown thread exception");
             // Catch all exceptions to prevent crashes
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     }
 
-    SDL_Log("IPC: Listening thread ended");
+    ipcLog("IPC: Listening thread ended");
 }
 
 void IPCHandler::sendMessage(const IPCMessage& msg) {
     std::lock_guard<std::mutex> lock(mutex);
     std::string serialized = msg.serialize();
-    SDL_Log("IPC: Sending message: %s", serialized.c_str());
+    ipcLog("IPC: Sending message: %s", serialized.c_str());
     std::cout << serialized << std::endl;
     std::cout.flush();
 }
@@ -174,7 +188,7 @@ void IPCHandler::sendMessage(const IPCMessage& msg) {
 void IPCHandler::sendMessage(const IPCMessage& msg, const std::string& additionalData) {
     std::lock_guard<std::mutex> lock(mutex);
     std::string serialized = msg.serialize();
-    SDL_Log("IPC: Sending message with data: %s", serialized.c_str());
+    ipcLog("IPC: Sending message with data: %s", serialized.c_str());
     std::cout << serialized;
     if (!additionalData.empty()) {
         std::cout << "\n" << additionalData;
