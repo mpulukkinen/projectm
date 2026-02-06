@@ -137,15 +137,15 @@ void IPCManager::handleDeletePresetMessage(const IPC::IPCMessage& msg) {
 }
 
 void IPCManager::handleStartOffsetMessage(const IPC::IPCMessage& msg) {
-    if (msg.data.isMember("startOffsetMs")) {
-        sessionStartOffsetMs = msg.data["startOffsetMs"].asUInt64();
+    if (msg.data.isMember("timestampMs")) {
+        sessionStartOffsetMs = msg.data["timestampMs"].asUInt64();
         SDL_Log("IPC: Set session start offset to %llu ms", sessionStartOffsetMs);
     }
 }
 
 void IPCManager::handleLengthMessage(const IPC::IPCMessage& msg) {
-    if (msg.data.isMember("lengthMs")) {
-        sessionLengthMs = msg.data["lengthMs"].asUInt64();
+    if (msg.data.isMember("timestampMs")) {
+        sessionLengthMs = msg.data["timestampMs"].asUInt64();
         SDL_Log("IPC: Set session length to %llu ms", sessionLengthMs);
     }
 }
