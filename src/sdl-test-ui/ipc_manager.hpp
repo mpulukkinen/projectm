@@ -8,6 +8,7 @@
 #pragma once
 
 #include "ipc_communication.hpp"
+#include "logging.hpp"
 #include "preset_queue_manager.hpp"
 #include <memory>
 #include <cstdint>
@@ -18,6 +19,8 @@
  */
 class IPCManager {
 public:
+    // File logger for IPC messages
+    std::shared_ptr<FileLogger> logger;
     IPCManager();
     ~IPCManager();
 
@@ -34,7 +37,7 @@ public:
     void sendCurrentState();
 
     // Send preview status update to C#
-    void sendPreviewStatusUpdate();
+    void sendPreviewStatusUpdate(const IPC::IPCMessage& msg);
 
     // Get the preset queue manager
     PresetQueueManager& getPresetQueue() { return presetQueue; }
@@ -52,8 +55,8 @@ public:
     void handleTimestampMessage(const IPC::IPCMessage& msg);
     void handleLoadPresetMessage(const IPC::IPCMessage& msg);
     void handleDeletePresetMessage(const IPC::IPCMessage& msg);
-    void handleStartPreviewMessage(const IPC::IPCMessage& msg);
-    void handleStopPreviewMessage(const IPC::IPCMessage& msg);
+    void handleStartOffsetMessage(const IPC::IPCMessage& msg);
+    void handleLengthMessage(const IPC::IPCMessage& msg);
 
     void setLastReceivedTimestamp(uint64_t timestamp) {
         lastReceivedTimestampMs = timestamp;
@@ -64,10 +67,16 @@ public:
     bool pendingStateUpdate;
     bool needsPreviewClockReset{false};
 
+public:
+    uint64_t getSessionStartOffsetMs() const { return sessionStartOffsetMs; }
+    uint64_t getSessionLengthMs() const { return sessionLengthMs; }
+
 private:
     std::unique_ptr<IPC::IPCHandler> ipcHandler;
     PresetQueueManager presetQueue;
     uint64_t lastReceivedTimestampMs;
+    uint64_t sessionStartOffsetMs = 0;
+    uint64_t sessionLengthMs = 0;
 
 };
 

@@ -11,6 +11,8 @@ add_executable(LvsAudioReactiveVisualizer
         debug_ipc_ui.hpp
         pmSDL.cpp
         pmSDL.hpp
+        logging.cpp
+        logging.hpp
         projectM_SDL_main.cpp
         setup.cpp
         setup.hpp
