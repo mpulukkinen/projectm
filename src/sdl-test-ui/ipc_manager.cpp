@@ -1,12 +1,25 @@
 #include "ipc_manager.hpp"
+#include "logging.hpp"
 #include <iostream>
 #include <SDL_log.h>
+#include <direct.h>
 
 IPCManager::IPCManager()
     : lastReceivedTimestampMs(0)
     , pendingStateUpdate(false),
       presetQueue(*this)
 {
+    // Log file in working directory
+    logger = std::make_shared<FileLogger>("ipc_messages.log");
+    // Immediately log presence
+    if (logger) logger->log("I AM HERE");
+    // Print working directory for diagnostics
+    char cwd[512];
+    if (_getcwd(cwd, sizeof(cwd))) {
+        SDL_Log("IPCManager: Current working directory: %s", cwd);
+    } else {
+        SDL_Log("IPCManager: Could not get current working directory");
+    }
 }
 
 IPCManager::~IPCManager() {
@@ -36,6 +49,11 @@ void IPCManager::shutdown() {
 }
 
 void IPCManager::handleIPCMessage(const IPC::IPCMessage& msg) {
+        // Log received message
+        if (logger) {
+            SDL_Log("IPCManager: Logging received message: %s", msg.serialize().c_str());
+            logger->log(std::string("RECV: ") + msg.serialize());
+        }
     switch (msg.type) {
         case IPC::MessageType::TIMESTAMP:
             handleTimestampMessage(msg);
@@ -45,6 +63,12 @@ void IPCManager::handleIPCMessage(const IPC::IPCMessage& msg) {
             break;
         case IPC::MessageType::DELETE_PRESET:
             handleDeletePresetMessage(msg);
+            break;
+        case IPC::MessageType::START_OFFSET:
+            handleStartOffsetMessage(msg);
+            break;
+        case IPC::MessageType::LENGTH:
+            handleLengthMessage(msg);
             break;
         default:
             // Unknown message type - send error
@@ -112,6 +136,20 @@ void IPCManager::handleDeletePresetMessage(const IPC::IPCMessage& msg) {
     }
 }
 
+void IPCManager::handleStartOffsetMessage(const IPC::IPCMessage& msg) {
+    if (msg.data.isMember("startOffsetMs")) {
+        sessionStartOffsetMs = msg.data["startOffsetMs"].asUInt64();
+        SDL_Log("IPC: Set session start offset to %llu ms", sessionStartOffsetMs);
+    }
+}
+
+void IPCManager::handleLengthMessage(const IPC::IPCMessage& msg) {
+    if (msg.data.isMember("lengthMs")) {
+        sessionLengthMs = msg.data["lengthMs"].asUInt64();
+        SDL_Log("IPC: Set session length to %llu ms", sessionLengthMs);
+    }
+}
+
 void IPCManager::sendCurrentState() {
     if (!ipcHandler) return;
 
@@ -122,6 +160,10 @@ void IPCManager::sendCurrentState() {
         ipcPresets.emplace_back(preset.presetName, preset.startTimestampMs);
     }
 
+        if (logger) {
+            SDL_Log("IPCManager: Logging SEND current state");
+            logger->log(std::string("SEND: ") + IPC::MessageBuilder::buildCurrentState(ipcPresets, lastReceivedTimestampMs).serialize());
+        }
     ipcHandler->sendMessage(
         IPC::MessageBuilder::buildCurrentState(ipcPresets, lastReceivedTimestampMs)
     );
@@ -129,6 +171,11 @@ void IPCManager::sendCurrentState() {
     pendingStateUpdate = false;
 }
 
-void IPCManager::sendPreviewStatusUpdate() {
-    if (!ipcHandler) return;
+void IPCManager::sendPreviewStatusUpdate(const IPC::IPCMessage& msg) {
+    if (!this->ipcHandler) return;
+    if (this->logger) {
+        SDL_Log("IPCManager: Logging SEND preview status update: %s", msg.serialize().c_str());
+        this->logger->log(std::string("SEND: ") + msg.serialize());
+    }
+    this->ipcHandler->sendMessage(msg);
 }

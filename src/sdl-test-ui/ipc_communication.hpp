@@ -36,7 +36,9 @@ enum class MessageType {
     PREVIEW_STATUS,            // C++ sends preview status update
 
     // Errors
-    ERROR_RESPONSE             // Error in processing
+    ERROR_RESPONSE,             // Error in processing
+    START_OFFSET,              // C# sends start offset (ms) for session
+    LENGTH                    // C# sends length (ms) for session
 };
 
 // ============================================================================
@@ -182,6 +184,22 @@ public:
         IPCMessage msg;
         msg.type = MessageType::ERROR_RESPONSE;
         msg.data["msg"] = errorMsg;
+        return msg;
+    }
+
+    // C# sends start offset (ms) for session
+    static IPCMessage buildStartOffset(uint64_t startOffsetMs) {
+        IPCMessage msg;
+        msg.type = MessageType::START_OFFSET;
+        msg.data["startOffsetMs"] = static_cast<Json::Value::Int64>(startOffsetMs);
+        return msg;
+    }
+
+    // C# sends length (ms) for session
+    static IPCMessage buildLength(uint64_t lengthMs) {
+        IPCMessage msg;
+        msg.type = MessageType::LENGTH;
+        msg.data["lengthMs"] = static_cast<Json::Value::Int64>(lengthMs);
         return msg;
     }
 };
