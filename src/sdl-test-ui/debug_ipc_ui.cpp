@@ -5,6 +5,9 @@
 
 namespace DebugIPCUI {
     uint64_t timeStamp = 0;
+    uint64_t sessionStartOffset = 0;
+    uint64_t sessionLength = 0;
+
     void render(IPCManager* ipcManager, projectMSDL* mainController) {
         if (!ipcManager) return;
 
@@ -27,6 +30,12 @@ namespace DebugIPCUI {
             ImGui::Text("Debug IPC Simulation");
             ImGui::Separator();
 
+            // Show current session info
+            ImGui::Text("Session Start Offset: %llu ms", sessionStartOffset);
+            ImGui::Text("Session Length: %llu ms", sessionLength);
+            ImGui::Text("Current Timestamp: %llu ms", timeStamp);
+            ImGui::Separator();
+
             // Horizontal layout for buttons
             // Button 1: Load Preset A
             if (ImGui::Button("Load Preset A")) {
@@ -44,16 +53,7 @@ namespace DebugIPCUI {
             }
             ImGui::SameLine();
 
-            // Button 3: Send Timestamp forward
-            if (ImGui::Button("Forward 10sec")) {
-                // Simulate receiving a TIMESTAMP message
-                timeStamp += 10000;
-                IPC::IPCMessage msg = IPC::MessageBuilder::buildTimestamp(timeStamp);
-                ipcManager->handleIPCMessage(msg);
-                mainController->togglePreview(true);
-            }
-
-            // Button 3: Send Timestamp forward
+            // Button 4: Send Timestamp backward
             if (ImGui::Button("Rewind 10sec")) {
                 // Simulate receiving a TIMESTAMP message
                 if(timeStamp < 10000)
@@ -63,11 +63,70 @@ namespace DebugIPCUI {
                 else
                 {
                     timeStamp -= 10000;
-
                 }
                 IPC::IPCMessage msg = IPC::MessageBuilder::buildTimestamp(timeStamp);
                 ipcManager->handleIPCMessage(msg);
-                mainController->togglePreview(true);
+            }
+
+            ImGui::SameLine();
+
+            // Button 3: Send Timestamp forward
+            if (ImGui::Button("Forward 10sec")) {
+                // Simulate receiving a TIMESTAMP message
+                timeStamp += 10000;
+                IPC::IPCMessage msg = IPC::MessageBuilder::buildTimestamp(timeStamp);
+                ipcManager->handleIPCMessage(msg);
+            }
+
+            ImGui::Separator();
+            ImGui::Text("Session Offset Simulation (+/- 1000ms)");
+
+            // Session offset buttons
+            if (ImGui::Button("-1000ms")) {
+                if (sessionStartOffset >= 1000) {
+                    sessionStartOffset -= 1000;
+                } else {
+                    sessionStartOffset = 0;
+                }
+                IPC::IPCMessage msg = IPC::MessageBuilder::buildStartOffset(sessionStartOffset);
+                ipcManager->handleIPCMessage(msg);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("+1000ms")) {
+                sessionStartOffset += 1000;
+                IPC::IPCMessage msg = IPC::MessageBuilder::buildStartOffset(sessionStartOffset);
+                ipcManager->handleIPCMessage(msg);
+            }
+
+            ImGui::SameLine();
+            if (ImGui::Button("Reset Offset")) {
+                sessionStartOffset = 0;
+                IPC::IPCMessage msg = IPC::MessageBuilder::buildStartOffset(sessionStartOffset);
+                ipcManager->handleIPCMessage(msg);
+            }
+
+            ImGui::Separator();
+            ImGui::Text("Session Length Simulation");
+
+            // Session length buttons
+            if (ImGui::Button("Length: 20000ms")) {
+                sessionLength = 20000;
+                IPC::IPCMessage msg = IPC::MessageBuilder::buildLength(sessionLength);
+                ipcManager->handleIPCMessage(msg);
+            }
+            ImGui::SameLine();
+
+            if (ImGui::Button("Length: 60000ms")) {
+                sessionLength = 60000;
+                IPC::IPCMessage msg = IPC::MessageBuilder::buildLength(sessionLength);
+                ipcManager->handleIPCMessage(msg);
+            }
+            ImGui::SameLine();
+
+            if (ImGui::Button("Clear Length")) {
+                sessionLength = 0;
+                IPC::IPCMessage msg = IPC::MessageBuilder::buildLength(sessionLength);
+                ipcManager->handleIPCMessage(msg);
             }
         }
         ImGui::End();

@@ -405,13 +405,17 @@ void projectMSDL::togglePreview(bool restart)
         preview_clock_initialized = false; // reset clock on new preview start
         if (this->cli_has_audio && this->cli_audio_buf && this->cli_audio_len > 0)
         {
-            // Get the start timestamp from IPC if available
-            uint32_t startTimestampMs = 0;
+            // Use last received timestamp from IPC for preview start
+            // getLastReceivedTimestamp() returns relative position within session
+            // Add sessionStartOffsetMs to get absolute position in audio
+            uint32_t startTimestampMs = ipcManager ? static_cast<uint32_t>(ipcManager->getLastReceivedTimestamp()) : 0;
             if (ipcManager) {
-                startTimestampMs = ipcManager->getLastReceivedTimestamp();
+                startTimestampMs += static_cast<uint32_t>(ipcManager->getSessionStartOffsetMs());
             }
-
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Previewing audio (F5) from timestamp %u ms\n", startTimestampMs);
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Previewing audio (F5) from absolute offset %u ms (session offset %llu ms + relative %llu ms)\n",
+                startTimestampMs,
+                ipcManager ? ipcManager->getSessionStartOffsetMs() : 0,
+                ipcManager ? ipcManager->getLastReceivedTimestamp() : 0);
             is_previewing = true;
             previewAudioAndFeed(this->cli_audio_spec, this->cli_audio_buf, this->cli_audio_len, startTimestampMs);
         }
@@ -540,7 +544,9 @@ void projectMSDL::updatePresetFromQueue(uint64_t timestampMs, bool doTransition)
     if (!ipcManager) return;
 
     auto& presetQueue = ipcManager->getPresetQueue();
-    auto activeEntry = presetQueue.getActivePresetEntry(timestampMs);
+    // Shift timestamp by sessionStartOffsetMs so preset schedule aligns with session offset
+    uint64_t shiftedTimestamp = timestampMs - ipcManager->getSessionStartOffsetMs();
+    auto activeEntry = presetQueue.getActivePresetEntry(shiftedTimestamp);
 
     // If no active preset (e.g. before first timestamp), do nothing
     if (activeEntry.presetName.empty()) return;
@@ -651,7 +657,13 @@ void projectMSDL::renderFrame()
                         current_time - preview_start_time
                     ).count();
 
-                    elapsed_ms += this->ipcManager->getLastReceivedTimestamp();
+                    // getLastReceivedTimestamp() returns position within session
+                    // Add session offset to get absolute position in audio
+                    uint64_t initialTimestamp = this->ipcManager->getLastReceivedTimestamp();
+                    if (this->ipcManager->getSessionStartOffsetMs() > 0) {
+                        initialTimestamp += this->ipcManager->getSessionStartOffsetMs();
+                    }
+                    elapsed_ms += initialTimestamp;
 
                     // Update audio preview timestamp
 
@@ -683,10 +695,9 @@ void projectMSDL::renderFrame()
         ImGui::NewFrame();
 
 #ifdef DEBUG
-        if (is_previewing) {
-            DebugIPCUI::render(ipcManager.get(), this);
-        }
+        DebugIPCUI::render(ipcManager.get(), this);
 #endif
+
 
         ImGui::SetNextWindowBgAlpha(0.65f);
         // position overlay at top-left corner
@@ -722,6 +733,32 @@ void projectMSDL::renderFrame()
         ImGui::BulletText("H: Hide this menu");
 
         ImGui::Separator();
+
+        // Show current playback time (timeMs) and session offset
+        uint64_t currentTimeMs = 0;
+        uint64_t sessionOffset = ipcManager ? ipcManager->getSessionStartOffsetMs() : 0;
+        uint64_t sessionLength = ipcManager ? ipcManager->getSessionLengthMs() : 0;
+
+        if (is_previewing) {
+            auto now = std::chrono::high_resolution_clock::now();
+            static auto preview_start_time = std::chrono::high_resolution_clock::now();
+            if (!preview_clock_initialized) preview_start_time = now;
+            uint64_t elapsedSincePreviewStart = std::chrono::duration_cast<std::chrono::milliseconds>(now - preview_start_time).count();
+            currentTimeMs = sessionOffset + elapsedSincePreviewStart;
+        } else {
+            // When not previewing, show the session start offset (where we start playing from)
+            currentTimeMs = sessionOffset;
+        }
+
+        // Calculate relative position within session
+        uint64_t relativePosition = (currentTimeMs > sessionOffset) ? (currentTimeMs - sessionOffset) : 0;
+
+        ImGui::Text("Playback position: %llu ms", currentTimeMs);
+        ImGui::Text("Relative position: %llu ms (from session start)", relativePosition);
+        ImGui::Text("Session offset: %llu ms", sessionOffset);
+        if (sessionLength > 0) {
+            ImGui::Text("Session length: %llu ms", sessionLength);
+        }
 
         if(ImGui::Button("Preview audio"))
         {
@@ -1247,39 +1284,37 @@ void projectMSDL::previewAudioAndFeed(const SDL_AudioSpec& audioSpec, const Uint
         // Calculate byte position from timestamp
         Uint32 bytesPerSec = audioSpec.freq * audioSpec.channels * (SDL_AUDIO_BITSIZE(audioSpec.format)/8);
         Uint32 startByteOffset = (bytesPerSec * (startTimestampMs / 1000));
-
         // Clamp to valid range
         if (startByteOffset >= audioLen) {
             startByteOffset = 0;
         }
-
+        // If sessionLengthMs is set, clamp preview to that length
+        Uint32 previewLen = audioLen - startByteOffset;
+        if (ipcManager && ipcManager->getSessionLengthMs() > 0) {
+            Uint32 maxLen = static_cast<Uint32>((bytesPerSec * ipcManager->getSessionLengthMs()) / 1000);
+            if (maxLen < previewLen) previewLen = maxLen;
+        }
         // Only open audio device if not already playing system audio
         SDL_AudioSpec want = audioSpec;
         SDL_AudioSpec have;
         SDL_AudioDeviceID dev = 0;
-
-        // Always try to open playback device for preview, even if capture is active
-        // The user explicitly requested a preview of the file
         if (SDL_WasInit(SDL_INIT_AUDIO) == 0) {
             SDL_Init(SDL_INIT_AUDIO);
         }
         dev = SDL_OpenAudioDevice(nullptr, 0, &want, &have, 0);
         if (dev != 0) {
             SDL_PauseAudioDevice(dev, 0);
-            SDL_QueueAudio(dev, audioBuf + startByteOffset, audioLen - startByteOffset);
+            SDL_QueueAudio(dev, audioBuf + startByteOffset, previewLen);
         }
-
         // Feed audio progressively per frame starting from the seek position
-        double totalSeconds = (double)audioLen / bytesPerSec;
+        double totalSeconds = (double)previewLen / bytesPerSec;
         double startSeconds = (double)startByteOffset / bytesPerSec;
-        double remainingSeconds = totalSeconds - startSeconds;
+        double remainingSeconds = totalSeconds;
         size_t totalFrames = static_cast<size_t>(remainingSeconds * this->fps());
         if (totalFrames == 0) totalFrames = 1;
-
         double bytesPerFrame = (double)bytesPerSec / (double)this->fps();
-
         const Uint8* ptr = audioBuf + startByteOffset;
-        Uint32 remaining = audioLen - startByteOffset;
+        Uint32 remaining = previewLen;
 
         for (size_t f = 0; f < totalFrames && remaining > 0 && is_previewing; ++f) {
             // Check if a new preview request has superseded this one
@@ -1364,16 +1399,26 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
     glClearColor(0.0f, 0.0f, 0.0f, render_as_transparency ? 0.0f : 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // Compute total frames from audio length
-    double seconds = (double)audioLen / (audioSpec.freq * audioSpec.channels * (SDL_AUDIO_BITSIZE(audioSpec.format)/8));
+    // Compute total frames from audio length and adjust audio pointer and length to start from sessionStartOffsetMs
+    Uint32 bytesPerSec = audioSpec.freq * audioSpec.channels * (SDL_AUDIO_BITSIZE(audioSpec.format)/8);
+    Uint32 startByteOffset = 0;
+    if (ipcManager && ipcManager->getSessionStartOffsetMs() > 0) {
+        startByteOffset = static_cast<Uint32>((bytesPerSec * ipcManager->getSessionStartOffsetMs()) / 1000);
+        if (startByteOffset >= audioLen) {
+            startByteOffset = 0; // fallback to start if offset is out of range
+        }
+    }
+    Uint32 renderLen = audioLen - startByteOffset;
+    if (ipcManager && ipcManager->getSessionLengthMs() > 0) {
+        Uint32 maxLen = static_cast<Uint32>((bytesPerSec * ipcManager->getSessionLengthMs()) / 1000);
+        if (maxLen < renderLen) renderLen = maxLen;
+    }
+    double seconds = (double)renderLen / bytesPerSec;
     size_t totalFrames = static_cast<size_t>(seconds * fps);
     if (totalFrames == 0) totalFrames = 1;
-
-    Uint32 bytesPerSec = audioSpec.freq * audioSpec.channels * (SDL_AUDIO_BITSIZE(audioSpec.format)/8);
     double bytesPerFrame = (double)bytesPerSec / (double)fps;
-
-    const Uint8* ptr = audioBuf;
-    Uint32 remaining = audioLen;
+    const Uint8* ptr = audioBuf + startByteOffset;
+    Uint32 remaining = renderLen;
 
     // Save current window/render state so we can restore it when finished or cancelled
     int saved_w = static_cast<int>(_width);
@@ -1424,12 +1469,15 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
 
         // Handle preset switching based on timestamp
         if (ipcManager) {
-            // Calculate current timestamp in milliseconds
+            // Calculate current timestamp in ms (relative to session start)
             double current_time_sec = (double)frameIndex / (double)fps;
             uint64_t current_time_ms = (uint64_t)(current_time_sec * 1000.0);
-
-            updatePresetFromQueue(current_time_ms, doTransition);
-            doTransition = true;
+            uint64_t session_time_ms = ipcManager->getSessionStartOffsetMs() + current_time_ms;
+            // If sessionLength is set and we've reached the end, stop rendering
+            if (ipcManager->getSessionLengthMs() > 0 && current_time_ms >= ipcManager->getSessionLengthMs()) {
+                SDL_Log("Render: session length reached (%llu ms), stopping.", ipcManager->getSessionLengthMs());
+                break;
+            }
         }
 
         // CRITICAL: Bind the 4K FBO BEFORE rendering so projectM renders at full resolution
@@ -1505,7 +1553,7 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
         // Preview: Blit 4K FBO to window for live preview during render
         glBindFramebuffer(GL_READ_FRAMEBUFFER, resolveFBO.fbo);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0); // Window
-        glViewport(0, 0, _width, _height);
+        glViewport(0, 0, static_cast<GLsizei>(_width), static_cast<GLsizei>(_height));
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         // Blit 4K -> window (with scaling if window is smaller)

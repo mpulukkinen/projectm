@@ -156,6 +156,9 @@ void PresetQueueManager::renderUI() {
 
         ImGui::Separator();
 
+        // Get session start offset for displaying relative timestamps
+        uint64_t sessionOffset = ipcManager.getSessionStartOffsetMs();
+
         for (size_t i = 0; i < presets.size(); ++i) {
             auto& preset = presets[i];
             ImGui::PushID(static_cast<int>(i));
@@ -166,19 +169,21 @@ void PresetQueueManager::renderUI() {
             ImGui::Text("%s", fname.c_str());
 
             // Timestamp editing
-            // First preset is always locked to 0
+            // Timestamps are stored as absolute (sessionOffset + relative)
+            // Display as relative to session start (presetTimestamp - sessionOffset)
+            // If timestamp equals sessionOffset, it displays as 0 (start of session)
+            uint64_t relativeTimestamp = (preset.startTimestampMs > sessionOffset) ?
+                (preset.startTimestampMs - sessionOffset) : 0;
+
+            // First preset is always locked to relative 0 (session start)
             if (i == 0) {
-                ImGui::Text("Start: 0 ms (Locked)");
+                ImGui::Text("Start: %llu ms (session start)", relativeTimestamp);
             } else {
-                int ts = static_cast<int>(preset.startTimestampMs);
+                int ts = static_cast<int>(relativeTimestamp);
                 if (ImGui::InputInt("Start (ms)", &ts)) {
                     if (ts < 0) ts = 0;
-                    // Update timestamp and re-sort
-                    // Since we are iterating, modifying the vector directly is risky if we sort immediately
-                    // But here we are just changing a value. However, sorting might invalidate iterators/indices if we were using them differently.
-                    // Since we are iterating by index, we can modify. But we need to re-sort after the loop or handle it carefully.
-                    // Simplest approach: modify, then break and re-sort (UI will update next frame)
-                    preset.startTimestampMs = static_cast<uint64_t>(ts);
+                    // Convert back to absolute: absolute = sessionOffset + relative
+                    preset.startTimestampMs = sessionOffset + static_cast<uint64_t>(ts);
                     sortPresets();
                     ImGui::PopID();
                     break;
@@ -194,6 +199,7 @@ void PresetQueueManager::renderUI() {
             ImGui::SameLine();
 
             if (ImGui::Button("Jump to time")) {
+                // Jump to the preset's actual timestamp (absolute)
                 ipcManager.setLastReceivedTimestamp(preset.startTimestampMs);
             }
 
