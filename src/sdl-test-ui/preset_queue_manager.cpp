@@ -209,3 +209,4 @@ void PresetQueueManager::renderUI() {
     }
     ImGui::End();
 }
+

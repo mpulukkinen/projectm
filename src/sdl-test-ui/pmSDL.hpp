@@ -67,6 +67,7 @@
 #include <thread>
 #include <map>
 #include <memory>
+#include <chrono>
 
 // Tree node for hierarchical preset organization
 struct PresetTreeNode {
@@ -152,6 +153,7 @@ public:
     void resetPreviewClock();
 
 private:
+    std::chrono::steady_clock::time_point preview_start_time{};
     void updatePresetFromQueue(uint64_t timestampMs, bool doTransition);
     static void presetSwitchedEvent(bool isHardCut, uint32_t index, void* context);
 
