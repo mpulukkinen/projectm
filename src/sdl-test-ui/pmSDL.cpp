@@ -33,7 +33,7 @@
 
 #include <vector>
 #include <thread>
-#include <chrono>
+
 #include <filesystem>
 #include <string>
 #include <algorithm>
@@ -625,9 +625,16 @@ void projectMSDL::renderFrame()
 
     if (!is_rendering && show_ui)
     {
-
         glClearColor(0.0, 0.0, 0.0, 0.0);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        if(is_previewing)
+        {
+            if (!preview_clock_initialized) {
+                this->preview_start_time = std::chrono::steady_clock::now();
+                preview_clock_initialized = true;
+            }
+        }
 
         // Update IPC manager with current playback timestamp and check for preset changes
         if (ipcManager) {
@@ -644,18 +651,11 @@ void projectMSDL::renderFrame()
                 try {
                     // Get current playback timestamp (in milliseconds from start of audio)
                     // Using a monotonic clock to track preview time
-                    static auto preview_start_time = std::chrono::high_resolution_clock::now();
 
 
-                    if (!preview_clock_initialized) {
-                        preview_start_time = std::chrono::high_resolution_clock::now();
-                        preview_clock_initialized = true;
-                    }
-
-                    auto current_time = std::chrono::high_resolution_clock::now();
-                    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        current_time - preview_start_time
-                    ).count();
+                    auto current_time = std::chrono::steady_clock::now();
+                    auto elapsed = current_time - this->preview_start_time;
+                    uint64_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
 
                     // getLastReceivedTimestamp() returns position within session
                     // Add session offset to get absolute position in audio
@@ -736,25 +736,16 @@ void projectMSDL::renderFrame()
 
         // Show current playback time (timeMs) and session offset
         uint64_t currentTimeMs = 0;
-        uint64_t sessionOffset = ipcManager ? ipcManager->getSessionStartOffsetMs() : 0;
         uint64_t sessionLength = ipcManager ? ipcManager->getSessionLengthMs() : 0;
 
-        if (is_previewing) {
-            auto now = std::chrono::high_resolution_clock::now();
-            static auto preview_start_time = std::chrono::high_resolution_clock::now();
-            if (!preview_clock_initialized) preview_start_time = now;
-            uint64_t elapsedSincePreviewStart = std::chrono::duration_cast<std::chrono::milliseconds>(now - preview_start_time).count();
-            currentTimeMs = sessionOffset + elapsedSincePreviewStart;
-        } else {
-            // When not previewing, show the session start offset (where we start playing from)
-            currentTimeMs = sessionOffset;
-        }
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = now - this->preview_start_time;
+        uint64_t elapsedSincePreviewStart = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
 
-        // Calculate relative position within session
-        uint64_t relativePosition = (currentTimeMs > sessionOffset) ? (currentTimeMs - sessionOffset) : 0;
-
+        currentTimeMs = ipcManager->getLastReceivedTimestamp() + (is_previewing ? elapsedSincePreviewStart : 0);
         ImGui::Text("Playback position: %llu ms", currentTimeMs);
-        ImGui::Text("Relative position: %llu ms (from session start)", relativePosition);
+
+        uint64_t sessionOffset = ipcManager ? ipcManager->getSessionStartOffsetMs() : 0;
         ImGui::Text("Session offset: %llu ms", sessionOffset);
         if (sessionLength > 0) {
             ImGui::Text("Session length: %llu ms", sessionLength);
