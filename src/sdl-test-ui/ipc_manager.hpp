@@ -66,6 +66,7 @@ public:
 
     bool pendingStateUpdate;
     bool needsPreviewClockReset{false};
+    bool needsFirstPresetAutoLoad{false};
 
 public:
     uint64_t getSessionStartOffsetMs() const { return sessionStartOffsetMs; }

@@ -100,6 +100,11 @@ void IPCManager::handleLoadPresetMessage(const IPC::IPCMessage& msg) {
         // Add preset to queue
         presetQueue.addPreset(presetName, startTimestamp);
 
+        // Signal UI/render loop to auto-load the first queued preset.
+        if (presetQueue.getPresetCount() == 1) {
+            needsFirstPresetAutoLoad = true;
+        }
+
         // Send confirmation back
         if (ipcHandler) {
             ipcHandler->sendMessage(

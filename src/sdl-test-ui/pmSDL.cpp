@@ -38,6 +38,7 @@
 #include <string>
 #include <algorithm>
 #include <cctype>
+#include <limits>
 #include "../../../vendor/SOIL2/src/SOIL2/stb_image_write.h"
 #include "text_render.h"
 // Dear ImGui
@@ -377,7 +378,11 @@ void projectMSDL::startRendering()
     if (!is_rendering)
     {
         is_previewing = false; // stop preview if running
-        ipcManager->pendingStateUpdate = true;
+        if (ipcManager) {
+            // Keep "Render" behavior consistent with pressing "Save playlist".
+            ipcManager->sendCurrentState();
+            ipcManager->pendingStateUpdate = true;
+        }
         projectm_set_preset_locked(_projectM, preset_lock);
         if (this->cli_has_audio && this->cli_audio_buf && this->cli_audio_len > 0 && !this->cli_out_dir.empty() && !this->cli_resolutions.empty())
         {
@@ -620,6 +625,17 @@ void projectMSDL::renderFrame()
     if (ipcManager && ipcManager->pendingStateUpdate) {
         ipcManager->sendCurrentState();
         ipcManager->pendingStateUpdate = false;
+    }
+
+    if (ipcManager && ipcManager->needsFirstPresetAutoLoad) {
+        auto queuedPresets = ipcManager->getPresetQueue().getAllPresets();
+        if (!queuedPresets.empty()) {
+            // Force a one-time switch to the first queued preset.
+            this->lastAppliedPresetTimestamp = std::numeric_limits<uint64_t>::max();
+            updatePresetFromQueue(queuedPresets.front().startTimestampMs, false);
+            isInitialPresetLoaded = true;
+        }
+        ipcManager->needsFirstPresetAutoLoad = false;
     }
 
     if (!is_rendering && show_ui)
