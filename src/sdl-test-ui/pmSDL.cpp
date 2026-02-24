@@ -59,13 +59,40 @@ static void resetPreviewClock() {
     preview_clock_initialized = false;
 }
 
+#if defined(_WIN32)
+#define PMGL_APIENTRY APIENTRY
+#else
+#define PMGL_APIENTRY
+#endif
+
+#if PM_ENABLE_PRESET_DIAGNOSTICS
+static void PMGL_APIENTRY projectMGLDebugCallback(GLenum source,
+                                                  GLenum type,
+                                                  GLuint id,
+                                                  GLenum severity,
+                                                  GLsizei length,
+                                                  const GLchar* message,
+                                                  const void* userParam)
+{
+    (void)source;
+    (void)type;
+    (void)id;
+    (void)severity;
+    (void)length;
+    (void)userParam;
+    SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "[GL Debug] %s", message ? message : "<null>");
+}
+#endif
+
 projectMSDL::projectMSDL(SDL_GLContext glCtx, const std::string& presetPath)
     : _openGlContext(glCtx)
     , _projectM(projectm_create_with_opengl_load_proc(&dispatchLoadProc, nullptr))
     , _playlist(projectm_playlist_create(_projectM))
+    , preset_base_path(presetPath)
 {
     projectm_get_window_size(_projectM, &_width, &_height);
     projectm_playlist_set_preset_switched_event_callback(_playlist, &projectMSDL::presetSwitchedEvent, static_cast<void*>(this));
+    projectm_playlist_set_preset_switch_failed_event_callback(_playlist, &projectMSDL::presetSwitchFailedEvent, static_cast<void*>(this));
     projectm_playlist_add_path(_playlist, presetPath.c_str(), true, false);
     projectm_playlist_set_shuffle(_playlist, _shuffle);
     dumpOpenGLInfo();
@@ -370,6 +397,18 @@ void projectMSDL::keyHandler(SDL_Event* sdl_evt)
             // Render sequence
             startRendering();
             break;
+
+#if PM_ENABLE_PRESET_DIAGNOSTICS
+        case SDLK_F9:
+            debug_preset_diagnostics = !debug_preset_diagnostics;
+            if (debug_preset_diagnostics) {
+                setupGLDebugOutput();
+            }
+            black_frame_streak = 0;
+            diagnostic_frame_counter = 0;
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Preset diagnostics: %s", debug_preset_diagnostics ? "ON" : "OFF");
+            break;
+#endif
     }
 }
 
@@ -703,7 +742,7 @@ void projectMSDL::renderFrame()
             }
         }
 
-        projectm_opengl_render_frame(_projectM);
+        renderProjectMFrameWithDiagnostics();
         // Dear ImGui overlay
         ImGui_ImplOpenGL2_NewFrame();
         ImGui_ImplSDL2_NewFrame(_sdlWindow);
@@ -745,7 +784,13 @@ void projectMSDL::renderFrame()
         ImGui::BulletText("T: Rendering background: %s", transparency.c_str());
         ImGui::BulletText("F5: Preview audio");
         ImGui::BulletText("F6: Render sequence");
+ #if PM_ENABLE_PRESET_DIAGNOSTICS
+        ImGui::BulletText("F9: Preset diagnostics (%s)", debug_preset_diagnostics ? "On" : "Off");
         ImGui::BulletText("H: Hide this menu");
+        ImGui::Checkbox("Debug Preset Diagnostics", &debug_preset_diagnostics);
+#else
+        ImGui::BulletText("H: Hide this menu");
+#endif
 
         ImGui::Separator();
 
@@ -812,6 +857,8 @@ void projectMSDL::renderFrame()
         ImGui::SameLine();
         if (ImGui::Button("Clear Search")) {
             this->preset_search[0] = '\0';
+            auto_focus_tree_on_preset_change = true;
+            focusTreeOnCurrentPreset();
         }
         ImGui::PopItemWidth();
 
@@ -868,9 +915,6 @@ void projectMSDL::renderFrame()
 
                                 if (ImGui::Selectable(name.c_str(), is_selected, 0, ImVec2(colWidth, 0))) {
                                     presetClicked(presetIndex);
-                                    projectm_playlist_set_position(_playlist, static_cast<uint32_t>(presetIndex), true);
-                                    projectm_set_preset_locked(_projectM, preset_lock);
-                                    UpdateWindowTitle();
                                 }
                                 ImGui::PopID();
                             }
@@ -1000,7 +1044,7 @@ void projectMSDL::renderFrame()
     {
         glClearColor(0.0, 0.0, 0.0, 0.0);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        projectm_opengl_render_frame(_projectM);
+        renderProjectMFrameWithDiagnostics();
          // Dear ImGui overlay
         ImGui_ImplOpenGL2_NewFrame();
         ImGui_ImplSDL2_NewFrame(_sdlWindow);
@@ -1042,6 +1086,12 @@ void projectMSDL::renderFrame()
 
 void projectMSDL::presetClicked(size_t i)
 {
+    if (i >= preset_list.size()) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Ignored preset click: index %zu out of range (%zu)\n", i, preset_list.size());
+        return;
+    }
+
+    auto_focus_tree_on_preset_change = true;
     projectm_playlist_set_position(_playlist, static_cast<uint32_t>(i), true);
     projectm_set_preset_locked(_projectM, preset_lock);
     UpdateWindowTitle();
@@ -1090,7 +1140,129 @@ void projectMSDL::presetSwitchedEvent(bool isHardCut, unsigned int index, void* 
     app->_presetName = presetName;
     projectm_playlist_free_string(presetName);
 
+    // Full cache rebuild is expensive for large libraries, so only do it if playlist size changed.
+    // Otherwise, just keep UI folder focus aligned to the active preset.
+    if (app->preset_list.size() != static_cast<size_t>(projectm_playlist_size(app->_playlist))) {
+        app->refreshPresetCache(app->auto_focus_tree_on_preset_change);
+    } else if (app->auto_focus_tree_on_preset_change) {
+        app->focusTreeOnCurrentPreset();
+    }
     app->UpdateWindowTitle();
+}
+
+void projectMSDL::renderProjectMFrameWithDiagnostics()
+{
+#if PM_ENABLE_PRESET_DIAGNOSTICS
+    if (debug_preset_diagnostics) {
+        setupGLDebugOutput();
+        logGLErrors("before projectm_opengl_render_frame");
+    }
+
+    projectm_opengl_render_frame(_projectM);
+
+    if (!debug_preset_diagnostics || render_as_transparency) {
+        return;
+    }
+
+    logGLErrors("after projectm_opengl_render_frame");
+
+    // Sample every few frames to keep overhead low.
+    diagnostic_frame_counter++;
+    if ((diagnostic_frame_counter % 5u) != 0u) {
+        return;
+    }
+
+    const GLint samplePoints[5][2] = {
+        {static_cast<GLint>(_width / 2), static_cast<GLint>(_height / 2)},
+        {static_cast<GLint>(_width / 4), static_cast<GLint>(_height / 4)},
+        {static_cast<GLint>((_width * 3) / 4), static_cast<GLint>(_height / 4)},
+        {static_cast<GLint>(_width / 4), static_cast<GLint>((_height * 3) / 4)},
+        {static_cast<GLint>((_width * 3) / 4), static_cast<GLint>((_height * 3) / 4)}
+    };
+
+    int darkSamples = 0;
+    for (const auto& p : samplePoints) {
+        GLubyte rgba[4] = {0, 0, 0, 0};
+        glReadPixels(p[0], p[1], 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+        if (rgba[0] < 8 && rgba[1] < 8 && rgba[2] < 8) {
+            darkSamples++;
+        }
+    }
+
+    if (darkSamples >= 4) {
+        black_frame_streak++;
+    } else {
+        black_frame_streak = 0;
+    }
+
+    if (black_frame_streak == 20) {
+        const char* vendor = reinterpret_cast<const char*>(glGetString(GL_VENDOR));
+        const char* version = reinterpret_cast<const char*>(glGetString(GL_VERSION));
+        const char* glsl = reinterpret_cast<const char*>(glGetString(GL_SHADING_LANGUAGE_VERSION));
+        uint32_t currentPos = projectm_playlist_get_position(_playlist);
+        char* currentPreset = projectm_playlist_item(_playlist, currentPos);
+
+        SDL_LogWarn(SDL_LOG_CATEGORY_RENDER,
+                    "Diagnostics: mostly-black output streak detected. preset='%s' path='%s' pos=%u vendor='%s' gl='%s' glsl='%s'",
+                    _presetName.c_str(),
+                    currentPreset ? currentPreset : "<null>",
+                    currentPos,
+                    vendor ? vendor : "<null>",
+                    version ? version : "<null>",
+                    glsl ? glsl : "<null>");
+
+        if (currentPreset) {
+            projectm_playlist_free_string(currentPreset);
+        }
+    }
+#else
+    projectm_opengl_render_frame(_projectM);
+#endif
+}
+
+#if PM_ENABLE_PRESET_DIAGNOSTICS
+void projectMSDL::setupGLDebugOutput()
+{
+    if (gl_debug_output_initialized) {
+        return;
+    }
+
+#if defined(GL_DEBUG_OUTPUT)
+    if (glDebugMessageCallback != nullptr) {
+        glEnable(GL_DEBUG_OUTPUT);
+#if defined(GL_DEBUG_OUTPUT_SYNCHRONOUS)
+        glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+#endif
+        glDebugMessageCallback(projectMGLDebugCallback, nullptr);
+        gl_debug_output_initialized = true;
+        SDL_LogInfo(SDL_LOG_CATEGORY_RENDER, "OpenGL debug callback enabled");
+    }
+#endif
+}
+
+void projectMSDL::logGLErrors(const char* stage)
+{
+    GLenum err = glGetError();
+    while (err != GL_NO_ERROR) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "[GL Error][%s] 0x%x", stage ? stage : "unknown", err);
+        err = glGetError();
+    }
+}
+#endif
+
+void projectMSDL::presetSwitchFailedEvent(const char* presetFilename, const char* message, void* context)
+{
+    auto app = reinterpret_cast<projectMSDL*>(context);
+    if (!app) {
+        return;
+    }
+
+    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                "Preset load failed and was removed from playlist: %s | reason: %s\n",
+                presetFilename ? presetFilename : "<unknown>",
+                message ? message : "<no details>");
+
+    app->refreshPresetCache(app->auto_focus_tree_on_preset_change);
 }
 
 projectm_handle projectMSDL::projectM()
@@ -1205,14 +1377,111 @@ void projectMSDL::buildPresetTree(const std::string& presetPath) {
     }
 }
 
+void projectMSDL::focusTreeOnPresetPath(const std::string& fullPresetPath)
+{
+    tree_path.clear();
+    tree_path.push_back(&preset_tree);
+
+    if (fullPresetPath.empty()) {
+        return;
+    }
+
+    std::string relPath = fullPresetPath;
+    try {
+        std::filesystem::path fp(fullPresetPath);
+        std::filesystem::path base(preset_base_path);
+        std::filesystem::path rp = std::filesystem::relative(fp, base);
+        relPath = rp.generic_string();
+    } catch (...) {
+        if (!preset_base_path.empty() && fullPresetPath.size() >= preset_base_path.size() &&
+            fullPresetPath.compare(0, preset_base_path.size(), preset_base_path) == 0) {
+            relPath = fullPresetPath.substr(preset_base_path.size());
+        }
+    }
+
+    while (!relPath.empty() && (relPath.front() == '\\' || relPath.front() == '/')) {
+        relPath.erase(0, 1);
+    }
+
+    std::vector<std::string> parts;
+    std::string current;
+    for (char c : relPath) {
+        if (c == '\\' || c == '/') {
+            if (!current.empty()) {
+                parts.push_back(current);
+                current.clear();
+            }
+        } else {
+            current += c;
+        }
+    }
+    if (!current.empty()) {
+        parts.push_back(current);
+    }
+
+    if (parts.size() <= 1) {
+        return;
+    }
+
+    parts.pop_back(); // remove filename, keep only folder chain
+
+    PresetTreeNode* node = &preset_tree;
+    for (const auto& folder : parts) {
+        auto it = node->folders.find(folder);
+        if (it == node->folders.end()) {
+            break;
+        }
+        node = &it->second;
+        tree_path.push_back(node);
+    }
+}
+
+void projectMSDL::focusTreeOnCurrentPreset()
+{
+    if (!_playlist) {
+        tree_path.clear();
+        tree_path.push_back(&preset_tree);
+        return;
+    }
+
+    uint32_t currentPos = projectm_playlist_get_position(_playlist);
+    char* currentPreset = projectm_playlist_item(_playlist, currentPos);
+    if (!currentPreset) {
+        tree_path.clear();
+        tree_path.push_back(&preset_tree);
+        return;
+    }
+
+    std::string fullPath(currentPreset);
+    projectm_playlist_free_string(currentPreset);
+    focusTreeOnPresetPath(fullPath);
+}
+
+void projectMSDL::refreshPresetCache(bool focusCurrentPreset)
+{
+    preset_list = listPresets();
+    buildPresetTree(preset_base_path);
+    if (focusCurrentPreset) {
+        focusTreeOnCurrentPreset();
+    } else {
+        tree_path.clear();
+        tree_path.push_back(&preset_tree);
+    }
+}
+
 std::vector<std::string> projectMSDL::listPresets() {
     std::vector<std::string> out;
     if (!_playlist) return out;
     uint32_t size = projectm_playlist_size(_playlist);
     for (uint32_t i = 0; i < size; ++i) {
         char* p = projectm_playlist_item(_playlist, i);
+        if (!p) {
+            continue;
+        }
+
         std::string fullPath(p);
         out.emplace_back(fullPath);
+        projectm_playlist_free_string(p);
 
         // This is no longer needed, but keep this still here
         /*if (p) {

@@ -88,6 +88,12 @@
 #include <memory>
 #include <chrono>
 
+#if defined(NDEBUG)
+#define PM_ENABLE_PRESET_DIAGNOSTICS 0
+#else
+#define PM_ENABLE_PRESET_DIAGNOSTICS 1
+#endif
+
 // Tree node for hierarchical preset organization
 struct PresetTreeNode {
     std::map<std::string, PresetTreeNode> folders; // nested folders
@@ -173,8 +179,12 @@ public:
 
 private:
     std::chrono::steady_clock::time_point preview_start_time{};
+    void focusTreeOnCurrentPreset();
+    void focusTreeOnPresetPath(const std::string& fullPresetPath);
+    void refreshPresetCache(bool focusCurrentPreset = true);
     void updatePresetFromQueue(uint64_t timestampMs, bool doTransition);
     static void presetSwitchedEvent(bool isHardCut, uint32_t index, void* context);
+    static void presetSwitchFailedEvent(const char* presetFilename, const char* message, void* context);
 
     void UpdateWindowTitle();
 
@@ -183,6 +193,13 @@ private:
 
     void startRendering();
     bool pending_render_request{false};
+#if PM_ENABLE_PRESET_DIAGNOSTICS
+    void setupGLDebugOutput();
+    void logGLErrors(const char* stage);
+    void renderProjectMFrameWithDiagnostics();
+#else
+    void renderProjectMFrameWithDiagnostics();
+#endif
 
     projectm_handle _projectM{nullptr};
     projectm_playlist_handle _playlist{nullptr};
@@ -213,6 +230,7 @@ private:
     bool preset_lock{true};
     bool render_as_transparency{false};
     Uint16 preset_duration_sec{20};
+    std::string preset_base_path;
     std::vector<std::string> preset_list{};
     char preset_search[256] = { 0 };
 
@@ -228,5 +246,12 @@ private:
     uint64_t lastPreviewedPresetTimestamp{0};
     bool doPreviewTransition{false};
     bool isInitialPresetLoaded{false};
+    bool auto_focus_tree_on_preset_change{false};
+#if PM_ENABLE_PRESET_DIAGNOSTICS
+    bool debug_preset_diagnostics{false};
+    bool gl_debug_output_initialized{false};
+    uint32_t diagnostic_frame_counter{0};
+    uint32_t black_frame_streak{0};
+#endif
 
 };
