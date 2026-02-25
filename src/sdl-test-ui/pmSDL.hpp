@@ -82,6 +82,7 @@
 #include <SDL2/SDL.h>
 #endif /** _WIN32 */
 #include <vector>
+#include <deque>
 #include <atomic>
 #include <thread>
 #include <map>
@@ -194,6 +195,8 @@ private:
     std::chrono::steady_clock::time_point preview_start_time{};
     void focusTreeOnCurrentPreset();
     void focusTreeOnPresetPath(const std::string& fullPresetPath);
+    void startPresetDiscovery();
+    void applyDiscoveredPresetBatch();
     void applyPendingPresetCache();
     void refreshPresetCache(bool focusCurrentPreset = true);
     void updatePresetFromQueue(uint64_t timestampMs, bool doTransition);
@@ -240,12 +243,20 @@ private:
     std::atomic<float> render_progress{0.0f}; // 0.0 .. 1.0
     std::thread render_thread; // optional thread handle if needed in future
     std::thread preset_cache_thread;
+    std::thread preset_discovery_thread;
     std::mutex preset_cache_mutex;
+    std::mutex preset_discovery_mutex;
     std::unique_ptr<PresetCacheData> pending_preset_cache{};
+    std::deque<std::string> discovered_preset_paths{};
     bool pending_cache_focus_current_preset{false};
     std::atomic<bool> preset_cache_build_in_progress{false};
     std::atomic<bool> preset_cache_pending_apply{false};
-    bool preset_cache_requested_once{false};
+    std::atomic<bool> preset_discovery_in_progress{false};
+    std::atomic<bool> preset_discovery_finished{false};
+    bool preset_discovery_started{false};
+    bool preset_discovery_applied_once{false};
+    std::atomic<size_t> discovered_preset_total{0};
+    std::atomic<size_t> inserted_preset_total{0};
     bool is_previewing{false};
     bool show_ui{true};
     bool preset_lock{true};

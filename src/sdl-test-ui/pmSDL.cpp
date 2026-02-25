@@ -213,6 +213,9 @@ projectMSDL::~projectMSDL()
     if (preset_cache_thread.joinable()) {
         preset_cache_thread.join();
     }
+    if (preset_discovery_thread.joinable()) {
+        preset_discovery_thread.join();
+    }
 
     projectm_playlist_destroy(_playlist);
     _playlist = nullptr;
@@ -732,11 +735,10 @@ void projectMSDL::updatePresetFromQueue(uint64_t timestampMs, bool doTransition)
 
 void projectMSDL::renderFrame()
 {
-    if (!preset_cache_requested_once) {
-        preset_cache_requested_once = true;
-        StartupLog("preset cache: first async refresh requested");
-        refreshPresetCache(false);
+    if (!preset_discovery_started) {
+        startPresetDiscovery();
     }
+    applyDiscoveredPresetBatch();
     applyPendingPresetCache();
 
     if (ipcManager && ipcManager->pendingStateUpdate) {
@@ -929,8 +931,10 @@ void projectMSDL::renderFrame()
             ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.35f, 1.0f), "Last preset load error:");
             ImGui::TextWrapped("%s", last_preset_load_error.c_str());
         }
-        if (preset_cache_build_in_progress) {
-            ImGui::TextDisabled("Loading presets...");
+        if (preset_discovery_in_progress || !preset_discovery_applied_once) {
+            ImGui::TextDisabled("Loading presets... %zu/%zu", inserted_preset_total.load(), discovered_preset_total.load());
+        } else if (preset_cache_build_in_progress) {
+            ImGui::TextDisabled("Building preset index...");
         }
 
         // Search box for presets. When non-empty, show filtered flat list instead of the tree.
@@ -1379,6 +1383,104 @@ void projectMSDL::configureCli(const SDL_AudioSpec& audioSpec, Uint8* audioBuf, 
 
 void projectMSDL::buildPresetTree(const std::string& presetPath) {
     preset_tree = buildPresetTreeForList(preset_list, presetPath);
+}
+
+void projectMSDL::startPresetDiscovery()
+{
+    if (preset_discovery_started || preset_discovery_in_progress) {
+        return;
+    }
+
+    if (preset_discovery_thread.joinable()) {
+        preset_discovery_thread.join();
+    }
+
+    preset_discovery_started = true;
+    preset_discovery_in_progress = true;
+    preset_discovery_finished = false;
+    discovered_preset_total = 0;
+    inserted_preset_total = 0;
+
+    StartupLog("preset discovery: async scan start (%s)", preset_base_path.c_str());
+    preset_discovery_thread = std::thread([this]() {
+        std::vector<std::string> staged;
+        staged.reserve(2048);
+        try {
+            for (const auto& entry : std::filesystem::recursive_directory_iterator(preset_base_path)) {
+                if (!entry.is_regular_file()) {
+                    continue;
+                }
+                if (toLowerAscii(entry.path().extension().string()) != ".milk") {
+                    continue;
+                }
+                staged.push_back(entry.path().string());
+                if (staged.size() >= 2048) {
+                    std::lock_guard<std::mutex> lock(preset_discovery_mutex);
+                    for (auto& path : staged) {
+                        discovered_preset_paths.push_back(std::move(path));
+                    }
+                    discovered_preset_total.fetch_add(staged.size());
+                    staged.clear();
+                }
+            }
+        } catch (const std::exception& e) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Preset discovery failed: %s", e.what());
+        }
+
+        if (!staged.empty()) {
+            std::lock_guard<std::mutex> lock(preset_discovery_mutex);
+            for (auto& path : staged) {
+                discovered_preset_paths.push_back(std::move(path));
+            }
+            discovered_preset_total.fetch_add(staged.size());
+            staged.clear();
+        }
+
+        preset_discovery_finished = true;
+        preset_discovery_in_progress = false;
+        StartupLog("preset discovery: async scan end (found=%zu)", discovered_preset_total.load());
+    });
+}
+
+void projectMSDL::applyDiscoveredPresetBatch()
+{
+    if (!preset_discovery_started) {
+        return;
+    }
+
+    constexpr size_t kBatchSize = 1000;
+    std::vector<std::string> batch;
+    batch.reserve(kBatchSize);
+
+    {
+        std::lock_guard<std::mutex> lock(preset_discovery_mutex);
+        const size_t take = std::min(kBatchSize, discovered_preset_paths.size());
+        for (size_t i = 0; i < take; ++i) {
+            batch.push_back(std::move(discovered_preset_paths.front()));
+            discovered_preset_paths.pop_front();
+        }
+    }
+
+    if (!batch.empty()) {
+        for (const auto& presetPath : batch) {
+            if (projectm_playlist_add_preset(_playlist, presetPath.c_str(), false)) {
+                inserted_preset_total++;
+            }
+        }
+    }
+
+    if (preset_discovery_finished && !preset_discovery_applied_once) {
+        bool queue_empty = false;
+        {
+            std::lock_guard<std::mutex> lock(preset_discovery_mutex);
+            queue_empty = discovered_preset_paths.empty();
+        }
+        if (queue_empty) {
+            preset_discovery_applied_once = true;
+            StartupLog("preset discovery: playlist population end (inserted=%zu)", inserted_preset_total.load());
+            refreshPresetCache(false);
+        }
+    }
 }
 
 void projectMSDL::focusTreeOnPresetPath(const std::string& fullPresetPath)
