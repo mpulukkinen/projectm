@@ -86,6 +86,7 @@
 #include <thread>
 #include <map>
 #include <unordered_map>
+#include <mutex>
 #include <memory>
 #include <chrono>
 
@@ -180,9 +181,20 @@ public:
     void resetPreviewClock();
 
 private:
+    struct PresetCacheData {
+        std::vector<std::string> preset_list;
+        std::vector<std::string> preset_filename_display;
+        std::vector<std::string> preset_filename_lower;
+        std::unordered_map<std::string, size_t> preset_index_by_path_lower;
+        std::unordered_map<std::string, size_t> preset_index_by_relpath_lower;
+        std::unordered_map<std::string, size_t> preset_index_by_filename_lower;
+        PresetTreeNode preset_tree;
+    };
+
     std::chrono::steady_clock::time_point preview_start_time{};
     void focusTreeOnCurrentPreset();
     void focusTreeOnPresetPath(const std::string& fullPresetPath);
+    void applyPendingPresetCache();
     void refreshPresetCache(bool focusCurrentPreset = true);
     void updatePresetFromQueue(uint64_t timestampMs, bool doTransition);
     static void presetSwitchedEvent(bool isHardCut, uint32_t index, void* context);
@@ -227,6 +239,13 @@ private:
     bool is_rendering{false};
     std::atomic<float> render_progress{0.0f}; // 0.0 .. 1.0
     std::thread render_thread; // optional thread handle if needed in future
+    std::thread preset_cache_thread;
+    std::mutex preset_cache_mutex;
+    std::unique_ptr<PresetCacheData> pending_preset_cache{};
+    bool pending_cache_focus_current_preset{false};
+    std::atomic<bool> preset_cache_build_in_progress{false};
+    std::atomic<bool> preset_cache_pending_apply{false};
+    bool preset_cache_requested_once{false};
     bool is_previewing{false};
     bool show_ui{true};
     bool preset_lock{true};

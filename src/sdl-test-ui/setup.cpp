@@ -1,4 +1,5 @@
 #include "setup.hpp"
+#include "startup_timing.hpp"
 
 #include <projectM-4/logging.h>
 #include "ConfigFile.h"
@@ -161,6 +162,7 @@ void logMessage(const char* message, projectm_log_level severity, void* userData
 // initialize SDL, openGL, config
 projectMSDL *setupSDLApp(const std::string& presetDir) {
     projectMSDL *app;
+    StartupLog("setupSDLApp: begin");
     seedRand();
 
     projectm_set_log_callback(&logMessage, false, nullptr);
@@ -180,7 +182,9 @@ projectMSDL *setupSDLApp(const std::string& presetDir) {
     SDL_SetHint(SDL_HINT_AUDIO_INCLUDE_MONITORS, "1");
 #endif
 
+    auto sdlInitStart = std::chrono::steady_clock::now();
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
+    StartupLog("setupSDLApp: SDL_Init done (took %llums)", static_cast<unsigned long long>(ElapsedMsSince(sdlInitStart)));
 
     if (! SDL_VERSION_ATLEAST(2, 0, 5)) {
         SDL_Log("SDL version 2.0.5 or greater is required. You have %i.%i.%i", SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_PATCHLEVEL);
@@ -200,12 +204,16 @@ projectMSDL *setupSDLApp(const std::string& presetDir) {
 
     initGL();
 
+    auto windowStart = std::chrono::steady_clock::now();
     SDL_Window *win = SDL_CreateWindow("Lyric Video Studio - Milkdrop Visualizer", 0, 0, width, height, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+    StartupLog("setupSDLApp: SDL_CreateWindow done (took %llums)", static_cast<unsigned long long>(ElapsedMsSince(windowStart)));
     SDL_GL_GetDrawableSize(win,&width,&height);
 
     initStereoscopicView(win);
 
+    auto glCtxStart = std::chrono::steady_clock::now();
     SDL_GLContext glCtx = SDL_GL_CreateContext(win);
+    StartupLog("setupSDLApp: SDL_GL_CreateContext done (took %llums)", static_cast<unsigned long long>(ElapsedMsSince(glCtxStart)));
 
     SDL_SetWindowTitle(win, "projectM");
 
@@ -229,12 +237,16 @@ projectMSDL *setupSDLApp(const std::string& presetDir) {
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Using data directory: %s\n", base_path.c_str());
 
     // load configuration file
+    auto configStart = std::chrono::steady_clock::now();
     std::string configFilePath = getConfigFilePath(base_path);
+    StartupLog("setupSDLApp: getConfigFilePath done (took %llums)", static_cast<unsigned long long>(ElapsedMsSince(configStart)));
     std::string presetURL = presetDir.empty() ? (base_path + "/presets") : presetDir;
 
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Using preset directory: %s\n", presetURL.c_str());
 
+    auto appCtorStart = std::chrono::steady_clock::now();
     app = new projectMSDL(glCtx, presetURL);
+    StartupLog("setupSDLApp: projectMSDL ctor done (took %llums)", static_cast<unsigned long long>(ElapsedMsSince(appCtorStart)));
 
     if (! configFilePath.empty())
     {
@@ -278,7 +290,9 @@ projectMSDL *setupSDLApp(const std::string& presetDir) {
     modKey = "CMD";
 #endif
 
+    auto appInitStart = std::chrono::steady_clock::now();
     app->init(win);
+    StartupLog("setupSDLApp: app->init done (took %llums)", static_cast<unsigned long long>(ElapsedMsSince(appInitStart)));
 
 #if STEREOSCOPIC_SBS
     app->toggleFullScreen();
@@ -295,6 +309,7 @@ projectMSDL *setupSDLApp(const std::string& presetDir) {
     return 0;
 #endif
 
+    StartupLog("setupSDLApp: end");
     return app;
 }
 

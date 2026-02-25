@@ -32,6 +32,7 @@
  */
 
 #include "pmSDL.hpp"
+#include "startup_timing.hpp"
 #include <cstdlib>
 
 #ifdef _WIN32
@@ -78,6 +79,8 @@ static int mainLoop(void *userData) {
 }
 
 int main(int argc, char *argv[]) {
+    StartupLog("main() entered");
+
     // Configure stdio for IPC before anything else
     #ifdef _WIN32
     _setmode(_fileno(stdin), _O_BINARY);
@@ -133,7 +136,10 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    auto setupStart = std::chrono::steady_clock::now();
+    StartupLog("setupSDLApp begin");
     projectMSDL *app = setupSDLApp(presetDir);
+    StartupLog("setupSDLApp end (took %llums)", static_cast<unsigned long long>(ElapsedMsSince(setupStart)));
 
     // List presets if requested (use project's playlist API)
     if (listPresets) {
@@ -149,14 +155,20 @@ int main(int argc, char *argv[]) {
     Uint8* wavBuf = nullptr;
     Uint32 wavLen = 0;
     if (!audioFile.empty()) {
+        auto audioLoadStart = std::chrono::steady_clock::now();
+        StartupLog("audio load begin: %s", audioFile.c_str());
         if (!loadAudioFile(audioFile, wavSpec, &wavBuf, &wavLen)) {
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to load audio file %s", audioFile.c_str());
+            StartupLog("audio load failed (took %llums)", static_cast<unsigned long long>(ElapsedMsSince(audioLoadStart)));
         } else {
             app->configureCli(wavSpec, wavBuf, wavLen, outDir, targetFps, resolutions, audioFile);
             double seconds = 0.0;
             if (wavSpec.freq > 0 && wavSpec.channels > 0)
                 seconds = (double)wavLen / (wavSpec.freq * wavSpec.channels * (SDL_AUDIO_BITSIZE(wavSpec.format)/8));
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Loaded audio: %s (%.2f sec)", audioFile.c_str(), seconds);
+            StartupLog("audio load end (took %llums, %.2f sec audio)",
+                       static_cast<unsigned long long>(ElapsedMsSince(audioLoadStart)),
+                       seconds);
         }
     }
 

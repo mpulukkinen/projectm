@@ -30,6 +30,7 @@
 */
 
 #include "pmSDL.hpp"
+#include "startup_timing.hpp"
 
 #include <vector>
 #include <thread>
@@ -97,6 +98,50 @@ std::string relativePathOrOriginal(const std::string& fullPath, const std::strin
     }
     return trimLeadingSeparators(relPath);
 }
+
+PresetTreeNode buildPresetTreeForList(const std::vector<std::string>& presetList, const std::string& presetPath)
+{
+    PresetTreeNode root;
+    for (size_t presetIndex = 0; presetIndex < presetList.size(); ++presetIndex) {
+        const auto& fullPath = presetList[presetIndex];
+        std::string relPath = relativePathOrOriginal(fullPath, presetPath);
+
+        std::vector<std::string> parts;
+        std::string current;
+        for (char c : relPath) {
+            if (c == '\\' || c == '/') {
+                if (!current.empty()) {
+                    parts.push_back(current);
+                    current.clear();
+                }
+            } else {
+                current += c;
+            }
+        }
+        if (!current.empty()) {
+            parts.push_back(current);
+        }
+
+        if (parts.empty()) {
+            continue;
+        }
+
+        std::string filename = parts.back();
+        parts.pop_back();
+
+        PresetTreeNode* current_node = &root;
+        for (const auto& folder : parts) {
+            if (current_node->folders.find(folder) == current_node->folders.end()) {
+                current_node->folders[folder] = PresetTreeNode();
+            }
+            current_node = &current_node->folders[folder];
+        }
+
+        current_node->presets.push_back(filename);
+        current_node->preset_indices.push_back(presetIndex);
+    }
+    return root;
+}
 }
 
 // Helper to reset the preview clock when jumping to a time
@@ -135,11 +180,13 @@ projectMSDL::projectMSDL(SDL_GLContext glCtx, const std::string& presetPath)
     , _playlist(projectm_playlist_create(_projectM))
     , preset_base_path(presetPath)
 {
+    StartupLog("projectMSDL: ctor begin");
     projectm_get_window_size(_projectM, &_width, &_height);
     projectm_playlist_set_preset_switched_event_callback(_playlist, &projectMSDL::presetSwitchedEvent, static_cast<void*>(this));
     projectm_playlist_set_preset_switch_failed_event_callback(_playlist, &projectMSDL::presetSwitchFailedEvent, static_cast<void*>(this));
     // Report each failed preset load immediately.
     projectm_playlist_set_retry_count(_playlist, 1);
+    auto addPathStart = std::chrono::steady_clock::now();
     projectm_playlist_add_path(_playlist, presetPath.c_str(), true, false);
     projectm_playlist_set_shuffle(_playlist, _shuffle);
     dumpOpenGLInfo();
@@ -162,6 +209,10 @@ projectMSDL::~projectMSDL()
     ImGui_ImplOpenGL2_Shutdown();
     ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext();
+
+    if (preset_cache_thread.joinable()) {
+        preset_cache_thread.join();
+    }
 
     projectm_playlist_destroy(_playlist);
     _playlist = nullptr;
@@ -681,6 +732,13 @@ void projectMSDL::updatePresetFromQueue(uint64_t timestampMs, bool doTransition)
 
 void projectMSDL::renderFrame()
 {
+    if (!preset_cache_requested_once) {
+        preset_cache_requested_once = true;
+        StartupLog("preset cache: first async refresh requested");
+        refreshPresetCache(false);
+    }
+    applyPendingPresetCache();
+
     if (ipcManager && ipcManager->pendingStateUpdate) {
         ipcManager->sendCurrentState();
         ipcManager->pendingStateUpdate = false;
@@ -870,6 +928,9 @@ void projectMSDL::renderFrame()
         if (!last_preset_load_error.empty()) {
             ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.35f, 1.0f), "Last preset load error:");
             ImGui::TextWrapped("%s", last_preset_load_error.c_str());
+        }
+        if (preset_cache_build_in_progress) {
+            ImGui::TextDisabled("Loading presets...");
         }
 
         // Search box for presets. When non-empty, show filtered flat list instead of the tree.
@@ -1317,71 +1378,7 @@ void projectMSDL::configureCli(const SDL_AudioSpec& audioSpec, Uint8* audioBuf, 
 }
 
 void projectMSDL::buildPresetTree(const std::string& presetPath) {
-    // Clear previous tree
-    preset_tree.folders.clear();
-    preset_tree.presets.clear();
-    preset_tree.preset_indices.clear();
-
-    // Parse full paths from preset_list and build hierarchical tree
-    for (size_t presetIndex = 0; presetIndex < preset_list.size(); ++presetIndex) {
-        const auto& fullPath = preset_list[presetIndex];
-        // Compute a path relative to the provided presetPath base.
-        // Use std::filesystem::relative when possible, fall back to
-        // stripping the prefix if relative() throws or isn't appropriate.
-        std::string relPath = fullPath;
-        try {
-            std::filesystem::path fp(fullPath);
-            std::filesystem::path base(presetPath);
-            std::filesystem::path rp = std::filesystem::relative(fp, base);
-            relPath = rp.generic_string();
-        } catch (...) {
-            // Fallback: if fullPath starts with presetPath, strip that prefix
-            if (!presetPath.empty() && fullPath.size() >= presetPath.size() &&
-                fullPath.compare(0, presetPath.size(), presetPath) == 0) {
-                relPath = fullPath.substr(presetPath.size());
-            }
-        }
-
-        // Trim any leading separators left after stripping base
-        while (!relPath.empty() && (relPath.front() == '\\' || relPath.front() == '/')) {
-            relPath.erase(0, 1);
-        }
-
-        // Split the relative path by separators (\ or /)
-        std::vector<std::string> parts;
-        std::string current;
-        for (char c : relPath) {
-            if (c == '\\' || c == '/') {
-                if (!current.empty()) {
-                    parts.push_back(current);
-                    current.clear();
-                }
-            } else {
-                current += c;
-            }
-        }
-        if (!current.empty()) parts.push_back(current);
-
-        // If no parts, skip
-        if (parts.empty()) continue;
-
-        // Last part is the filename (preset), rest are folders
-        std::string filename = parts.back();
-        parts.pop_back();
-
-        // Navigate/create folder hierarchy and add preset to leaf
-        PresetTreeNode* current_node = &preset_tree;
-        for (const auto& folder : parts) {
-            if (current_node->folders.find(folder) == current_node->folders.end()) {
-                current_node->folders[folder] = PresetTreeNode();
-            }
-            current_node = &current_node->folders[folder];
-        }
-
-        // Add preset filename to current node
-        current_node->presets.push_back(filename);
-        current_node->preset_indices.push_back(presetIndex);
-    }
+    preset_tree = buildPresetTreeForList(preset_list, presetPath);
 }
 
 void projectMSDL::focusTreeOnPresetPath(const std::string& fullPresetPath)
@@ -1464,39 +1461,99 @@ void projectMSDL::focusTreeOnCurrentPreset()
     focusTreeOnPresetPath(fullPath);
 }
 
-void projectMSDL::refreshPresetCache(bool focusCurrentPreset)
+void projectMSDL::applyPendingPresetCache()
 {
-    preset_list = listPresets();
-    preset_filename_display.clear();
-    preset_filename_lower.clear();
-    preset_index_by_path_lower.clear();
-    preset_index_by_relpath_lower.clear();
-    preset_index_by_filename_lower.clear();
-    preset_filename_display.reserve(preset_list.size());
-    preset_filename_lower.reserve(preset_list.size());
-    preset_index_by_path_lower.reserve(preset_list.size());
-    preset_index_by_relpath_lower.reserve(preset_list.size());
-    preset_index_by_filename_lower.reserve(preset_list.size());
-    for (const auto& presetPath : preset_list) {
-        std::string filename = filenameFromPath(presetPath);
-        std::string filenameLower = toLowerAscii(filename);
-        preset_filename_display.push_back(filename);
-        preset_filename_lower.push_back(filenameLower);
-
-        const size_t presetIndex = preset_filename_display.size() - 1;
-        preset_index_by_path_lower.emplace(normalizePathLower(presetPath), presetIndex);
-        preset_index_by_relpath_lower.emplace(normalizePathLower(relativePathOrOriginal(presetPath, preset_base_path)), presetIndex);
-        preset_index_by_filename_lower.emplace(filenameLower, presetIndex);
+    if (!preset_cache_pending_apply) {
+        return;
     }
+
+    std::unique_ptr<PresetCacheData> cache;
+    bool focusCurrentPreset = false;
+    {
+        std::lock_guard<std::mutex> lock(preset_cache_mutex);
+        cache = std::move(pending_preset_cache);
+        focusCurrentPreset = pending_cache_focus_current_preset;
+        preset_cache_pending_apply = false;
+    }
+
+    if (!cache) {
+        return;
+    }
+
+    preset_list = std::move(cache->preset_list);
+    preset_filename_display = std::move(cache->preset_filename_display);
+    preset_filename_lower = std::move(cache->preset_filename_lower);
+    preset_index_by_path_lower = std::move(cache->preset_index_by_path_lower);
+    preset_index_by_relpath_lower = std::move(cache->preset_index_by_relpath_lower);
+    preset_index_by_filename_lower = std::move(cache->preset_index_by_filename_lower);
+    preset_tree = std::move(cache->preset_tree);
     cached_search_query.clear();
     cached_search_matches.clear();
-    buildPresetTree(preset_base_path);
+
     if (focusCurrentPreset) {
         focusTreeOnCurrentPreset();
     } else {
         tree_path.clear();
         tree_path.push_back(&preset_tree);
     }
+    StartupLog("preset cache: async apply complete (presets=%zu)", preset_list.size());
+}
+
+void projectMSDL::refreshPresetCache(bool focusCurrentPreset)
+{
+    if (preset_cache_build_in_progress) {
+        return;
+    }
+
+    if (preset_cache_thread.joinable()) {
+        preset_cache_thread.join();
+    }
+
+    auto listStart = std::chrono::steady_clock::now();
+    auto presetListSnapshot = listPresets();
+    StartupLog("preset cache: listPresets done (count=%zu, took %llums)",
+               presetListSnapshot.size(),
+               static_cast<unsigned long long>(ElapsedMsSince(listStart)));
+    const std::string basePath = preset_base_path;
+    preset_cache_build_in_progress = true;
+    StartupLog("preset cache: async build start");
+    preset_cache_thread = std::thread([this,
+                                       presetListSnapshot = std::move(presetListSnapshot),
+                                       basePath,
+                                       focusCurrentPreset]() mutable {
+        auto buildStart = std::chrono::steady_clock::now();
+        auto cache = std::make_unique<PresetCacheData>();
+        cache->preset_list = std::move(presetListSnapshot);
+        cache->preset_filename_display.reserve(cache->preset_list.size());
+        cache->preset_filename_lower.reserve(cache->preset_list.size());
+        cache->preset_index_by_path_lower.reserve(cache->preset_list.size());
+        cache->preset_index_by_relpath_lower.reserve(cache->preset_list.size());
+        cache->preset_index_by_filename_lower.reserve(cache->preset_list.size());
+
+        for (const auto& presetPath : cache->preset_list) {
+            std::string filename = filenameFromPath(presetPath);
+            std::string filenameLower = toLowerAscii(filename);
+            cache->preset_filename_display.push_back(filename);
+            cache->preset_filename_lower.push_back(filenameLower);
+
+            const size_t presetIndex = cache->preset_filename_display.size() - 1;
+            cache->preset_index_by_path_lower.emplace(normalizePathLower(presetPath), presetIndex);
+            cache->preset_index_by_relpath_lower.emplace(normalizePathLower(relativePathOrOriginal(presetPath, basePath)), presetIndex);
+            cache->preset_index_by_filename_lower.emplace(filenameLower, presetIndex);
+        }
+
+        cache->preset_tree = buildPresetTreeForList(cache->preset_list, basePath);
+
+        {
+            std::lock_guard<std::mutex> lock(preset_cache_mutex);
+            pending_preset_cache = std::move(cache);
+            pending_cache_focus_current_preset = focusCurrentPreset;
+            preset_cache_pending_apply = true;
+        }
+        StartupLog("preset cache: async build end (took %llums)",
+                   static_cast<unsigned long long>(ElapsedMsSince(buildStart)));
+        preset_cache_build_in_progress = false;
+    });
 }
 
 std::vector<std::string> projectMSDL::listPresets() {
