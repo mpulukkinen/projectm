@@ -9,7 +9,7 @@
             "preLaunchTask": "build-test-ui",
             "args": [
                 "--preset-dir",
-                "C:\\Users\\copyhere2\\Downloads\\projectMSDL-Windows-x64-2.0-pre3\\projectMSDL\\presets",
+                "I:\\milkPresets",
                 "--audio",
                 "P:\\Albums\\Virtuality\\3.HallofHeroes.wav",
                 "--fps",
