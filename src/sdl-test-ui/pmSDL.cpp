@@ -66,6 +66,37 @@ std::string filenameFromPath(const std::string& fullPath)
     const size_t last_sep = fullPath.find_last_of("/\\");
     return (last_sep != std::string::npos) ? fullPath.substr(last_sep + 1) : fullPath;
 }
+
+std::string normalizePathLower(std::string value)
+{
+    std::replace(value.begin(), value.end(), '\\', '/');
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return value;
+}
+
+std::string trimLeadingSeparators(std::string value)
+{
+    while (!value.empty() && (value.front() == '/' || value.front() == '\\')) {
+        value.erase(value.begin());
+    }
+    return value;
+}
+
+std::string relativePathOrOriginal(const std::string& fullPath, const std::string& basePath)
+{
+    std::string relPath = fullPath;
+    try {
+        std::filesystem::path fp(fullPath);
+        std::filesystem::path base(basePath);
+        relPath = std::filesystem::relative(fp, base).generic_string();
+    } catch (...) {
+        if (!basePath.empty() && fullPath.size() >= basePath.size() &&
+            fullPath.compare(0, basePath.size(), basePath) == 0) {
+            relPath = fullPath.substr(basePath.size());
+        }
+    }
+    return trimLeadingSeparators(relPath);
+}
 }
 
 // Helper to reset the preview clock when jumping to a time
@@ -107,6 +138,8 @@ projectMSDL::projectMSDL(SDL_GLContext glCtx, const std::string& presetPath)
     projectm_get_window_size(_projectM, &_width, &_height);
     projectm_playlist_set_preset_switched_event_callback(_playlist, &projectMSDL::presetSwitchedEvent, static_cast<void*>(this));
     projectm_playlist_set_preset_switch_failed_event_callback(_playlist, &projectMSDL::presetSwitchFailedEvent, static_cast<void*>(this));
+    // Report each failed preset load immediately.
+    projectm_playlist_set_retry_count(_playlist, 1);
     projectm_playlist_add_path(_playlist, presetPath.c_str(), true, false);
     projectm_playlist_set_shuffle(_playlist, _shuffle);
     dumpOpenGLInfo();
@@ -611,64 +644,37 @@ void projectMSDL::updatePresetFromQueue(uint64_t timestampMs, bool doTransition)
     // Only switch if this specific scheduled item hasn't been applied yet
     // This prevents constant re-triggering of the same preset
     if (activeEntry.startTimestampMs != this->lastAppliedPresetTimestamp || timestampMs == 0) {
-        std::string activePreset = activeEntry.presetName;
+        const std::string activePreset = activeEntry.presetName;
+        const std::string activePathKey = normalizePathLower(activePreset);
+        const std::string activeRelPathKey = normalizePathLower(trimLeadingSeparators(activePreset));
+        const std::string activeFilenameKey = toLowerAscii(filenameFromPath(activePreset));
 
-        // Find preset index in playlist with robust path matching
-        // We do this search every time we need to switch, which is infrequent
-        for (size_t i = 0; i < preset_list.size(); ++i) {
-            std::string path = preset_list[i];
-
-            // Extract filename from both paths for comparison
-            size_t sep = path.find_last_of("/\\");
-            std::string pathFilename = (sep != std::string::npos) ? path.substr(sep + 1) : path;
-
-            size_t activeSep = activePreset.find_last_of("/\\");
-            std::string activeFilename = (activeSep != std::string::npos) ? activePreset.substr(activeSep + 1) : activePreset;
-
-            // First try exact filename match
-            bool isMatch = (pathFilename == activeFilename);
-
-            // If not matched by filename, try path suffix matching
-            // This handles cases where activePreset is "folder/preset.milk" and path is "/full/path/to/folder/preset.milk"
-            if (!isMatch && activePreset.find_last_of("/\\") != std::string::npos) {
-                // Normalize paths: convert backslashes to forward slashes for consistent comparison
-                std::string normalizedPath = path;
-                std::string normalizedActive = activePreset;
-                std::replace(normalizedPath.begin(), normalizedPath.end(), '\\', '/');
-                std::replace(normalizedActive.begin(), normalizedActive.end(), '\\', '/');
-
-                // Check if the path ends with the active preset (relative path match)
-                if (normalizedPath.length() >= normalizedActive.length()) {
-                    size_t pos = normalizedPath.length() - normalizedActive.length();
-                    isMatch = (normalizedPath.substr(pos) == normalizedActive);
+        size_t matchedIndex = preset_list.size();
+        auto pathIt = preset_index_by_path_lower.find(activePathKey);
+        if (pathIt != preset_index_by_path_lower.end()) {
+            matchedIndex = pathIt->second;
+        } else {
+            auto relPathIt = preset_index_by_relpath_lower.find(activeRelPathKey);
+            if (relPathIt != preset_index_by_relpath_lower.end()) {
+                matchedIndex = relPathIt->second;
+            } else {
+                auto filenameIt = preset_index_by_filename_lower.find(activeFilenameKey);
+                if (filenameIt != preset_index_by_filename_lower.end()) {
+                    matchedIndex = filenameIt->second;
                 }
             }
+        }
 
-            // Also try reverse: check if active preset is a suffix that matches full path
-            if (!isMatch && path.find_last_of("/\\") != std::string::npos) {
-                std::string normalizedPath = path;
-                std::string normalizedActive = activePreset;
-                std::replace(normalizedPath.begin(), normalizedPath.end(), '\\', '/');
-                std::replace(normalizedActive.begin(), normalizedActive.end(), '\\', '/');
+        if (matchedIndex < preset_list.size()) {
+            // Found it! Switch.
+            projectm_playlist_set_position(_playlist, static_cast<uint32_t>(matchedIndex), !doTransition);
 
-                if (normalizedActive.length() >= normalizedPath.length()) {
-                    size_t pos = normalizedActive.length() - normalizedPath.length();
-                    isMatch = (normalizedActive.substr(pos) == normalizedPath);
-                }
-            }
+            // Lock it so projectM doesn't auto-switch away immediately
+            projectm_set_preset_locked(_projectM, true);
 
-            if (isMatch) {
-                // Found it! Switch.
-                projectm_playlist_set_position(_playlist, static_cast<uint32_t>(i), !doTransition);
-
-                // Lock it so projectM doesn't auto-switch away immediately
-                projectm_set_preset_locked(_projectM, true);
-
-                // Update our state
-                this->lastAppliedPresetTimestamp = activeEntry.startTimestampMs;
-                UpdateWindowTitle();
-                break;
-            }
+            // Update our state
+            this->lastAppliedPresetTimestamp = activeEntry.startTimestampMs;
+            UpdateWindowTitle();
         }
     }
 }
@@ -864,8 +870,6 @@ void projectMSDL::renderFrame()
         if (!last_preset_load_error.empty()) {
             ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.35f, 1.0f), "Last preset load error:");
             ImGui::TextWrapped("%s", last_preset_load_error.c_str());
-        } else {
-            ImGui::TextDisabled("Last preset load error: (none)");
         }
 
         // Search box for presets. When non-empty, show filtered flat list instead of the tree.
@@ -961,15 +965,23 @@ void projectMSDL::renderFrame()
                 columns = std::min(columns, 4); // Cap at 4 columns
 
                 if (ImGui::BeginTable("preset_tree_table", columns, ImGuiTableFlags_SizingStretchSame)) {
+                    struct BrowserItem {
+                        std::string name;
+                        bool is_folder;
+                        size_t preset_index;
+                    };
+                    constexpr size_t kInvalidPresetIndex = static_cast<size_t>(-1);
 
                     // Create sorted list of items: folders first, then presets
-                    std::vector<std::pair<std::string, bool>> items; // (name, is_folder)
+                    std::vector<BrowserItem> items;
+                    items.reserve(static_cast<size_t>(total_items));
                     for (const auto& folder_pair : current_node->folders) {
-                        items.push_back({folder_pair.first, true});
+                        items.push_back({folder_pair.first, true, kInvalidPresetIndex});
                     }
-                    for (const auto& preset : current_node->presets) {
-                        items.push_back({preset, false});
+                    for (size_t preset_idx = 0; preset_idx < current_node->presets.size(); ++preset_idx) {
+                        items.push_back({current_node->presets[preset_idx], false, current_node->preset_indices[preset_idx]});
                     }
+                    const uint32_t current_pos = projectm_playlist_get_position(_playlist);
 
                     // Calculate rows and render in column-major order
                     int rows = (total_items + columns - 1) / columns;
@@ -981,51 +993,26 @@ void projectMSDL::renderFrame()
 
                             if (idx < static_cast<int>(items.size())) {
                                 const auto& item = items[idx];
-                                bool is_folder = item.second;
+                                bool is_folder = item.is_folder;
 
                                 if (is_folder) {
                                     // Render folder as clickable button
-                                    if (ImGui::Button(("->" + item.first).c_str(), ImVec2(colWidth, 0))) {
+                                    if (ImGui::Button(("->" + item.name).c_str(), ImVec2(colWidth, 0))) {
                                         // Navigate into this folder
-                                        if (current_node->folders.find(item.first) != current_node->folders.end()) {
-                                            tree_path.push_back(&current_node->folders[item.first]);
+                                        if (current_node->folders.find(item.name) != current_node->folders.end()) {
+                                            tree_path.push_back(&current_node->folders[item.name]);
                                         }
                                     }
                                 } else {
                                     // Render preset as selectable
-                                    std::string display = " - " + item.first;
+                                    std::string display = " - " + item.name;
                                     ImGui::PushID(idx);
 
-                                    // Find this preset in the flat list to check if it's selected
-                                    // (This is a simplified check - ideally we'd track tree-aware selection)
-                                    uint32_t current_pos = projectm_playlist_get_position(_playlist);
-                                    bool is_selected = false;
-                                    if (current_pos < preset_list.size()) {
-                                        // Compare with current preset path
-                                        auto current_preset = projectm_playlist_item(_playlist, current_pos);
-                                        if (current_preset) {
-                                            std::string current_name = current_preset;
-                                            // Extract filename from full path
-                                            size_t last_sep = current_name.find_last_of("/\\");
-                                            if (last_sep != std::string::npos) {
-                                                current_name = current_name.substr(last_sep + 1);
-                                            }
-                                            is_selected = (current_name == item.first);
-                                            projectm_playlist_free_string(current_preset);
-                                        }
-                                    }
+                                    bool is_selected = (item.preset_index == static_cast<size_t>(current_pos));
 
                                     if (ImGui::Selectable(display.c_str(), is_selected, 0, ImVec2(colWidth, 0))) {
-                                        // Find and select this preset in the playlist
-                                        // Search through preset_list for matching filename
-                                        for (size_t i = 0; i < preset_list.size(); ++i) {
-                                            std::string path = preset_list[i];
-                                            size_t last_sep = path.find_last_of("/\\");
-                                            std::string filename = (last_sep != std::string::npos) ? path.substr(last_sep + 1) : path;
-                                            if (filename == item.first) {
-                                                presetClicked(i);
-                                                break;
-                                            }
+                                        if (item.preset_index < preset_list.size()) {
+                                            presetClicked(item.preset_index);
                                         }
                                     }
                                     ImGui::PopID();
@@ -1105,7 +1092,6 @@ void projectMSDL::presetClicked(size_t i)
         return;
     }
 
-    last_preset_load_error.clear();
     auto_focus_tree_on_preset_change = true;
     projectm_playlist_set_position(_playlist, static_cast<uint32_t>(i), true);
     projectm_set_preset_locked(_projectM, preset_lock);
@@ -1152,7 +1138,6 @@ void projectMSDL::presetSwitchedEvent(bool isHardCut, unsigned int index, void* 
     auto presetName = projectm_playlist_item(app->_playlist, index);
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Displaying preset: %s\n", presetName);
 
-    app->last_preset_load_error.clear();
     app->_presetName = presetName;
     projectm_playlist_free_string(presetName);
 
@@ -1335,9 +1320,11 @@ void projectMSDL::buildPresetTree(const std::string& presetPath) {
     // Clear previous tree
     preset_tree.folders.clear();
     preset_tree.presets.clear();
+    preset_tree.preset_indices.clear();
 
     // Parse full paths from preset_list and build hierarchical tree
-    for (const auto& fullPath : preset_list) {
+    for (size_t presetIndex = 0; presetIndex < preset_list.size(); ++presetIndex) {
+        const auto& fullPath = preset_list[presetIndex];
         // Compute a path relative to the provided presetPath base.
         // Use std::filesystem::relative when possible, fall back to
         // stripping the prefix if relative() throws or isn't appropriate.
@@ -1393,6 +1380,7 @@ void projectMSDL::buildPresetTree(const std::string& presetPath) {
 
         // Add preset filename to current node
         current_node->presets.push_back(filename);
+        current_node->preset_indices.push_back(presetIndex);
     }
 }
 
@@ -1481,12 +1469,24 @@ void projectMSDL::refreshPresetCache(bool focusCurrentPreset)
     preset_list = listPresets();
     preset_filename_display.clear();
     preset_filename_lower.clear();
+    preset_index_by_path_lower.clear();
+    preset_index_by_relpath_lower.clear();
+    preset_index_by_filename_lower.clear();
     preset_filename_display.reserve(preset_list.size());
     preset_filename_lower.reserve(preset_list.size());
+    preset_index_by_path_lower.reserve(preset_list.size());
+    preset_index_by_relpath_lower.reserve(preset_list.size());
+    preset_index_by_filename_lower.reserve(preset_list.size());
     for (const auto& presetPath : preset_list) {
         std::string filename = filenameFromPath(presetPath);
+        std::string filenameLower = toLowerAscii(filename);
         preset_filename_display.push_back(filename);
-        preset_filename_lower.push_back(toLowerAscii(std::move(filename)));
+        preset_filename_lower.push_back(filenameLower);
+
+        const size_t presetIndex = preset_filename_display.size() - 1;
+        preset_index_by_path_lower.emplace(normalizePathLower(presetPath), presetIndex);
+        preset_index_by_relpath_lower.emplace(normalizePathLower(relativePathOrOriginal(presetPath, preset_base_path)), presetIndex);
+        preset_index_by_filename_lower.emplace(filenameLower, presetIndex);
     }
     cached_search_query.clear();
     cached_search_matches.clear();

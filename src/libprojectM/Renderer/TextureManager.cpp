@@ -113,9 +113,9 @@ void TextureManager::PurgeTextures()
         }
     }
 
-    // Clear file cache
-    m_scannedTextureFiles.clear();
-    m_filesScanned = false;
+    // Keep scanned file cache warm across preset switches.
+    // Rescanning the full texture search tree on every preset load can stall
+    // badly on large preset directories.
 
     // Only purge textures with an age of 2 or higher, so we don't evict textures used by the preset being blended out
     uint32_t newest = 99999999;

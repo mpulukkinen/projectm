@@ -55,7 +55,7 @@ public:
 
     /**
      * @brief Purges unused textures and increments the age counter of all stored textures.
-     * Also resets the scanned texture list. Must be called exactly once per preset load.
+     * Must be called exactly once per preset load.
      */
     void PurgeTextures();
 

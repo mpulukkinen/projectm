@@ -85,6 +85,7 @@
 #include <atomic>
 #include <thread>
 #include <map>
+#include <unordered_map>
 #include <memory>
 #include <chrono>
 
@@ -98,6 +99,7 @@
 struct PresetTreeNode {
     std::map<std::string, PresetTreeNode> folders; // nested folders
     std::vector<std::string> presets;              // preset filenames in this folder (no path)
+    std::vector<size_t> preset_indices;            // playlist indices matching presets vector
 };
 
 // DATADIR_PATH should be set by the root Makefile if this is being
@@ -234,6 +236,9 @@ private:
     std::vector<std::string> preset_list{};
     std::vector<std::string> preset_filename_display{};
     std::vector<std::string> preset_filename_lower{};
+    std::unordered_map<std::string, size_t> preset_index_by_path_lower{};
+    std::unordered_map<std::string, size_t> preset_index_by_relpath_lower{};
+    std::unordered_map<std::string, size_t> preset_index_by_filename_lower{};
     std::string cached_search_query{};
     std::vector<size_t> cached_search_matches{};
     std::string last_preset_load_error{};
