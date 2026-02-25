@@ -54,6 +54,20 @@ auto dispatchLoadProc(const char* name, void* userData) -> void*
 }
 } // namespace
 
+namespace {
+std::string toLowerAscii(std::string value)
+{
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return value;
+}
+
+std::string filenameFromPath(const std::string& fullPath)
+{
+    const size_t last_sep = fullPath.find_last_of("/\\");
+    return (last_sep != std::string::npos) ? fullPath.substr(last_sep + 1) : fullPath;
+}
+}
+
 // Helper to reset the preview clock when jumping to a time
 static void resetPreviewClock() {
     preview_clock_initialized = false;
@@ -847,6 +861,12 @@ void projectMSDL::renderFrame()
 
         ImGui::Separator();
         ImGui::Text("Presets:");
+        if (!last_preset_load_error.empty()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.35f, 1.0f), "Last preset load error:");
+            ImGui::TextWrapped("%s", last_preset_load_error.c_str());
+        } else {
+            ImGui::TextDisabled("Last preset load error: (none)");
+        }
 
         // Search box for presets. When non-empty, show filtered flat list instead of the tree.
         float colWidth = 400;
@@ -875,42 +895,36 @@ void projectMSDL::renderFrame()
 
         // If there's a search term, render a filtered flat list of presets
         if (!search_term.empty()) {
-            // case-insensitive search
-            std::string query = search_term;
-            std::transform(query.begin(), query.end(), query.begin(), [](unsigned char c){ return std::tolower(c); });
+            const std::string query = toLowerAscii(search_term);
 
-            // collect matching indices and display names
-            std::vector<size_t> matches;
-            std::vector<std::string> match_names;
-            for (size_t i = 0; i < preset_list.size(); ++i) {
-                std::string full = preset_list[i];
-                size_t last_sep = full.find_last_of("/\\");
-                std::string fname = (last_sep != std::string::npos) ? full.substr(last_sep + 1) : full;
-                std::string fname_l = fname;
-                std::transform(fname_l.begin(), fname_l.end(), fname_l.begin(), [](unsigned char c){ return std::tolower(c); });
-                if (fname_l.find(query) != std::string::npos) {
-                    matches.push_back(i);
-                    match_names.push_back(fname);
+            if (query != cached_search_query) {
+                cached_search_query = query;
+                cached_search_matches.clear();
+                cached_search_matches.reserve(preset_filename_lower.size());
+                for (size_t i = 0; i < preset_filename_lower.size(); ++i) {
+                    if (preset_filename_lower[i].find(query) != std::string::npos) {
+                        cached_search_matches.push_back(i);
+                    }
                 }
             }
 
             // Display results in the same multi-column layout
-            if (!matches.empty()) {
-                int columns = std::min(4, (static_cast<int>(matches.size()) + 19) / 20);
+            if (!cached_search_matches.empty()) {
+                int columns = std::min(4, (static_cast<int>(cached_search_matches.size()) + 19) / 20);
+                const uint32_t current_pos = projectm_playlist_get_position(_playlist);
                 if (ImGui::BeginTable("preset_search_table", columns, ImGuiTableFlags_SizingStretchSame)) {
-                    int rows = (static_cast<int>(matches.size()) + columns - 1) / columns;
+                    int rows = (static_cast<int>(cached_search_matches.size()) + columns - 1) / columns;
                     for (int r = 0; r < rows; ++r) {
                         ImGui::TableNextRow();
                         for (int c = 0; c < columns; ++c) {
                             ImGui::TableSetColumnIndex(c);
                             int idx = r + c * rows;
-                            if (idx < static_cast<int>(matches.size())) {
-                                size_t presetIndex = matches[idx];
-                                const std::string& name = match_names[idx];
+                            if (idx < static_cast<int>(cached_search_matches.size())) {
+                                size_t presetIndex = cached_search_matches[idx];
+                                const std::string& name = preset_filename_display[presetIndex];
                                 ImGui::PushID(static_cast<int>(presetIndex));
 
                                 // Determine selection state
-                                uint32_t current_pos = projectm_playlist_get_position(_playlist);
                                 bool is_selected = (current_pos == presetIndex);
 
                                 if (ImGui::Selectable(name.c_str(), is_selected, 0, ImVec2(colWidth, 0))) {
@@ -1091,6 +1105,7 @@ void projectMSDL::presetClicked(size_t i)
         return;
     }
 
+    last_preset_load_error.clear();
     auto_focus_tree_on_preset_change = true;
     projectm_playlist_set_position(_playlist, static_cast<uint32_t>(i), true);
     projectm_set_preset_locked(_projectM, preset_lock);
@@ -1137,6 +1152,7 @@ void projectMSDL::presetSwitchedEvent(bool isHardCut, unsigned int index, void* 
     auto presetName = projectm_playlist_item(app->_playlist, index);
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Displaying preset: %s\n", presetName);
 
+    app->last_preset_load_error.clear();
     app->_presetName = presetName;
     projectm_playlist_free_string(presetName);
 
@@ -1261,6 +1277,9 @@ void projectMSDL::presetSwitchFailedEvent(const char* presetFilename, const char
                 "Preset load failed and was removed from playlist: %s | reason: %s\n",
                 presetFilename ? presetFilename : "<unknown>",
                 message ? message : "<no details>");
+    app->last_preset_load_error = std::string(presetFilename ? presetFilename : "<unknown>")
+                                + " | reason: "
+                                + std::string(message ? message : "<no details>");
 
     app->refreshPresetCache(app->auto_focus_tree_on_preset_change);
 }
@@ -1460,6 +1479,17 @@ void projectMSDL::focusTreeOnCurrentPreset()
 void projectMSDL::refreshPresetCache(bool focusCurrentPreset)
 {
     preset_list = listPresets();
+    preset_filename_display.clear();
+    preset_filename_lower.clear();
+    preset_filename_display.reserve(preset_list.size());
+    preset_filename_lower.reserve(preset_list.size());
+    for (const auto& presetPath : preset_list) {
+        std::string filename = filenameFromPath(presetPath);
+        preset_filename_display.push_back(filename);
+        preset_filename_lower.push_back(toLowerAscii(std::move(filename)));
+    }
+    cached_search_query.clear();
+    cached_search_matches.clear();
     buildPresetTree(preset_base_path);
     if (focusCurrentPreset) {
         focusTreeOnCurrentPreset();

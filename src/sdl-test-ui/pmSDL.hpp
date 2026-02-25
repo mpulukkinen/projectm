@@ -232,6 +232,11 @@ private:
     Uint16 preset_duration_sec{20};
     std::string preset_base_path;
     std::vector<std::string> preset_list{};
+    std::vector<std::string> preset_filename_display{};
+    std::vector<std::string> preset_filename_lower{};
+    std::string cached_search_query{};
+    std::vector<size_t> cached_search_matches{};
+    std::string last_preset_load_error{};
     char preset_search[256] = { 0 };
 
     // Preset tree structure and navigation
