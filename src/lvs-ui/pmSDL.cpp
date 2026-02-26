@@ -170,6 +170,15 @@ projectMSDL::projectMSDL(SDL_GLContext glCtx, const std::string& presetPath)
     , preset_base_path(presetPath)
 {
     StartupLog("projectMSDL: ctor begin");
+    try {
+        // Restore full IPC functionality (listener + queue/state sync).
+        ipcManager = std::make_unique<IPCManager>();
+        ipcManager->initialize();
+    } catch (const std::exception& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "IPC Manager initialization failed: %s", e.what());
+        ipcManager.reset();
+    }
+
     projectm_get_window_size(_projectM, &_width, &_height);
     projectm_playlist_set_preset_switched_event_callback(_playlist, &projectMSDL::presetSwitchedEvent, static_cast<void*>(this));
     projectm_playlist_set_preset_switch_failed_event_callback(_playlist, &projectMSDL::presetSwitchFailedEvent, static_cast<void*>(this));
@@ -1484,7 +1493,13 @@ void projectMSDL::applyDiscoveredPresetBatch()
         if (queue_empty) {
             preset_discovery_applied_once = true;
             StartupLog("preset discovery: playlist population end (inserted=%zu)", inserted_preset_total.load());
-            buildPresetCacheFromListAsync(inserted_preset_paths, false);
+            if (!inserted_preset_paths.empty()) {
+                buildPresetCacheFromListAsync(inserted_preset_paths, false);
+            } else {
+                // Playlist may already be populated (e.g. via projectm_playlist_add_path),
+                // so rebuild cache from the live playlist instead of the inserted batch.
+                refreshPresetCache(false);
+            }
         }
     }
 }
