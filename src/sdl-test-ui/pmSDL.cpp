@@ -685,15 +685,15 @@ void projectMSDL::touchDestroyAll()
     projectm_touch_destroy_all(_projectM);
 }
 
-void projectMSDL::updatePresetFromQueue(uint64_t timestampMs, bool doTransition) {
-    if (!ipcManager) return;
+bool projectMSDL::updatePresetFromQueue(uint64_t timestampMs, bool doTransition) {
+    if (!ipcManager) return false;
 
     auto& presetQueue = ipcManager->getPresetQueue();
     // Shift timestamp by sessionStartOffsetMs so preset schedule aligns with session offset
     auto activeEntry = presetQueue.getActivePresetEntry(timestampMs);
 
     // If no active preset (e.g. before first timestamp), do nothing
-    if (activeEntry.presetName.empty()) return;
+    if (activeEntry.presetName.empty()) return false;
 
     // Only switch if this specific scheduled item hasn't been applied yet
     // This prevents constant re-triggering of the same preset
@@ -729,8 +729,10 @@ void projectMSDL::updatePresetFromQueue(uint64_t timestampMs, bool doTransition)
             // Update our state
             this->lastAppliedPresetTimestamp = activeEntry.startTimestampMs;
             UpdateWindowTitle();
+            return true;
         }
     }
+    return false;
 }
 
 void projectMSDL::renderFrame()
@@ -747,14 +749,21 @@ void projectMSDL::renderFrame()
     }
 
     if (ipcManager && ipcManager->needsFirstPresetAutoLoad) {
-        auto queuedPresets = ipcManager->getPresetQueue().getAllPresets();
-        if (!queuedPresets.empty()) {
+        if (!preset_discovery_applied_once || preset_cache_build_in_progress || preset_cache_pending_apply) {
+            // Keep pending; presets/index are not ready yet.
+        } else {
+            auto queuedPresets = ipcManager->getPresetQueue().getAllPresets();
+            bool applied = false;
+            if (!queuedPresets.empty()) {
             // Force a one-time switch to the first queued preset.
             this->lastAppliedPresetTimestamp = std::numeric_limits<uint64_t>::max();
-            updatePresetFromQueue(queuedPresets.front().startTimestampMs, false);
-            isInitialPresetLoaded = true;
+                applied = updatePresetFromQueue(queuedPresets.front().startTimestampMs, false);
+            }
+            if (applied) {
+                isInitialPresetLoaded = true;
+                ipcManager->needsFirstPresetAutoLoad = false;
+            }
         }
-        ipcManager->needsFirstPresetAutoLoad = false;
     }
 
     if (!is_rendering && show_ui)
@@ -802,7 +811,7 @@ void projectMSDL::renderFrame()
                     // Update audio preview timestamp
 
                     // Check if there's an active preset at the current timestamp
-                    updatePresetFromQueue(static_cast<uint64_t>(elapsed_ms), doPreviewTransition);
+                    (void)updatePresetFromQueue(static_cast<uint64_t>(elapsed_ms), doPreviewTransition);
                     doPreviewTransition = true;
 
                     // Update lastPreviewedPresetTimestamp when timestamp changed externally
@@ -816,7 +825,7 @@ void projectMSDL::renderFrame()
             else if (timestampChanged || !isInitialPresetLoaded)
             {
                 // Update preset if IPC timestamp changed
-                updatePresetFromQueue(ipcManager->getLastReceivedTimestamp(), true);
+                (void)updatePresetFromQueue(ipcManager->getLastReceivedTimestamp(), true);
                 lastPreviewedPresetTimestamp = ipcManager->getLastReceivedTimestamp();
                 isInitialPresetLoaded = true;
             }
@@ -1400,6 +1409,11 @@ void projectMSDL::startPresetDiscovery()
     preset_discovery_finished = false;
     discovered_preset_total = 0;
     inserted_preset_total = 0;
+    inserted_preset_paths.clear();
+    {
+        std::lock_guard<std::mutex> lock(preset_discovery_mutex);
+        discovered_preset_paths.clear();
+    }
 
     StartupLog("preset discovery: async scan start (%s)", preset_base_path.c_str());
     preset_discovery_thread = std::thread([this]() {
@@ -1465,6 +1479,7 @@ void projectMSDL::applyDiscoveredPresetBatch()
         for (const auto& presetPath : batch) {
             if (projectm_playlist_add_preset(_playlist, presetPath.c_str(), false)) {
                 inserted_preset_total++;
+                inserted_preset_paths.push_back(presetPath);
             }
         }
     }
@@ -1478,7 +1493,7 @@ void projectMSDL::applyDiscoveredPresetBatch()
         if (queue_empty) {
             preset_discovery_applied_once = true;
             StartupLog("preset discovery: playlist population end (inserted=%zu)", inserted_preset_total.load());
-            refreshPresetCache(false);
+            buildPresetCacheFromListAsync(inserted_preset_paths, false);
         }
     }
 }
@@ -1601,7 +1616,7 @@ void projectMSDL::applyPendingPresetCache()
     StartupLog("preset cache: async apply complete (presets=%zu)", preset_list.size());
 }
 
-void projectMSDL::refreshPresetCache(bool focusCurrentPreset)
+void projectMSDL::buildPresetCacheFromListAsync(std::vector<std::string> presetListSnapshot, bool focusCurrentPreset)
 {
     if (preset_cache_build_in_progress) {
         return;
@@ -1611,11 +1626,6 @@ void projectMSDL::refreshPresetCache(bool focusCurrentPreset)
         preset_cache_thread.join();
     }
 
-    auto listStart = std::chrono::steady_clock::now();
-    auto presetListSnapshot = listPresets();
-    StartupLog("preset cache: listPresets done (count=%zu, took %llums)",
-               presetListSnapshot.size(),
-               static_cast<unsigned long long>(ElapsedMsSince(listStart)));
     const std::string basePath = preset_base_path;
     preset_cache_build_in_progress = true;
     StartupLog("preset cache: async build start");
@@ -1656,6 +1666,16 @@ void projectMSDL::refreshPresetCache(bool focusCurrentPreset)
                    static_cast<unsigned long long>(ElapsedMsSince(buildStart)));
         preset_cache_build_in_progress = false;
     });
+}
+
+void projectMSDL::refreshPresetCache(bool focusCurrentPreset)
+{
+    auto listStart = std::chrono::steady_clock::now();
+    auto presetListSnapshot = listPresets();
+    StartupLog("preset cache: listPresets done (count=%zu, took %llums)",
+               presetListSnapshot.size(),
+               static_cast<unsigned long long>(ElapsedMsSince(listStart)));
+    buildPresetCacheFromListAsync(std::move(presetListSnapshot), focusCurrentPreset);
 }
 
 std::vector<std::string> projectMSDL::listPresets() {
@@ -1943,7 +1963,7 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
                 break;
             }
 
-            updatePresetFromQueue(session_time_ms, doTransition);
+            (void)updatePresetFromQueue(session_time_ms, doTransition);
             doTransition = true;
         }
 

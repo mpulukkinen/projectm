@@ -198,8 +198,9 @@ private:
     void startPresetDiscovery();
     void applyDiscoveredPresetBatch();
     void applyPendingPresetCache();
+    void buildPresetCacheFromListAsync(std::vector<std::string> presetListSnapshot, bool focusCurrentPreset);
     void refreshPresetCache(bool focusCurrentPreset = true);
-    void updatePresetFromQueue(uint64_t timestampMs, bool doTransition);
+    bool updatePresetFromQueue(uint64_t timestampMs, bool doTransition);
     static void presetSwitchedEvent(bool isHardCut, uint32_t index, void* context);
     static void presetSwitchFailedEvent(const char* presetFilename, const char* message, void* context);
 
@@ -248,6 +249,7 @@ private:
     std::mutex preset_discovery_mutex;
     std::unique_ptr<PresetCacheData> pending_preset_cache{};
     std::deque<std::string> discovered_preset_paths{};
+    std::vector<std::string> inserted_preset_paths{};
     bool pending_cache_focus_current_preset{false};
     std::atomic<bool> preset_cache_build_in_progress{false};
     std::atomic<bool> preset_cache_pending_apply{false};
