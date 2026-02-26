@@ -5,8 +5,8 @@
             "name": "LvsAudioReactiveVisualizer",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/out/src/sdl-test-ui/Debug/LvsAudioReactiveVisualizer.exe",
-            "preLaunchTask": "build-test-ui",
+            "program": "${workspaceFolder}/out/src/lvs-ui/Debug/LvsAudioReactiveVisualizer.exe",
+            "preLaunchTask": "build-lvs-ui",
             "args": [
                 "--preset-dir",
                 "I:\\milkPresets",
@@ -29,8 +29,8 @@
             "name": "LvsAudioReactiveVisualizerLinux",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/out/src/sdl-test-ui/LvsAudioReactiveVisualizer",
-            "preLaunchTask": "build-test-ui",
+            "program": "${workspaceFolder}/out/src/lvs-ui/LvsAudioReactiveVisualizer",
+            "preLaunchTask": "build-lvs-ui",
             "args": [
                 "--preset-dir",
                 "/home/pulkkinen/projectm/presets/tests",

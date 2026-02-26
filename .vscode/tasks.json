@@ -2,7 +2,7 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "build-test-ui",
+            "label": "build-lvs-ui",
             "type": "shell",
             "command": "cmake",
             "args": [
