@@ -39,7 +39,6 @@
 #include <projectM-4/projectM.h>
 
 // projectM SDL
-#include "audioCapture.hpp"
 #include "loopback.hpp"
 #include "setup.hpp"
 
@@ -112,7 +111,7 @@ struct PresetTreeNode {
 #ifndef _WIN32
 #warning "DATADIR_PATH is not defined - falling back to ./"
 #else
-#pragma warning "DATADIR_PATH is not defined - falling back to ./"
+#pragma message("DATADIR_PATH is not defined - falling back to ./")
 #endif /** _WIN32 */
 #else
 #define DATADIR_PATH "/usr/local/share/projectM"
@@ -193,6 +192,7 @@ private:
     };
 
     std::chrono::steady_clock::time_point preview_start_time{};
+    bool preview_clock_initialized{false};
     void focusTreeOnCurrentPreset();
     void focusTreeOnPresetPath(const std::string& fullPresetPath);
     void startPresetDiscovery();

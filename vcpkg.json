@@ -24,7 +24,8 @@
     "gui": {
       "description": "Build a simple, SDL2-based development test UI",
       "dependencies": [
-        "sdl2"
+        "sdl2",
+        "jsoncpp"
       ]
     },
     "boost-filesystem": {

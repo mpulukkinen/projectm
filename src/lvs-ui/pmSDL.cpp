@@ -40,7 +40,7 @@
 #include <algorithm>
 #include <cctype>
 #include <limits>
-#include "../../../vendor/SOIL2/src/SOIL2/stb_image_write.h"
+#include "../../vendor/stb_image/stb_image_write.h"
 #include "text_render.h"
 // Dear ImGui
 #include "imgui.h"
@@ -144,25 +144,14 @@ PresetTreeNode buildPresetTreeForList(const std::vector<std::string>& presetList
 }
 }
 
-// Helper to reset the preview clock when jumping to a time
-static void resetPreviewClock() {
-    preview_clock_initialized = false;
-}
-
-#if defined(_WIN32)
-#define PMGL_APIENTRY APIENTRY
-#else
-#define PMGL_APIENTRY
-#endif
-
 #if PM_ENABLE_PRESET_DIAGNOSTICS
-static void PMGL_APIENTRY projectMGLDebugCallback(GLenum source,
-                                                  GLenum type,
-                                                  GLuint id,
-                                                  GLenum severity,
-                                                  GLsizei length,
-                                                  const GLchar* message,
-                                                  const void* userParam)
+static void GLAPIENTRY projectMGLDebugCallback(GLenum source,
+                                               GLenum type,
+                                               GLuint id,
+                                               GLenum severity,
+                                               GLsizei length,
+                                               const GLchar* message,
+                                               const void* userParam)
 {
     (void)source;
     (void)type;
@@ -593,7 +582,8 @@ void projectMSDL::resize(unsigned int width_, unsigned int height_)
 
 void projectMSDL::resetPreviewClock()
 {
-    ::resetPreviewClock();
+    preview_clock_initialized = false;
+    preview_start_time = std::chrono::steady_clock::time_point{};
 }
 
 void projectMSDL::pollEvent()
@@ -768,7 +758,7 @@ void projectMSDL::renderFrame()
 
     if (!is_rendering && show_ui)
     {
-        glClearColor(0.0, 0.0, 0.0, 0.0);
+        glClearColor(0.0f, 0.0f, 0.0f, render_as_transparency ? 0.0f : 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         if(is_previewing)
@@ -891,7 +881,8 @@ void projectMSDL::renderFrame()
         auto elapsed = now - this->preview_start_time;
         uint64_t elapsedSincePreviewStart = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
 
-        currentTimeMs = ipcManager->getLastReceivedTimestamp() + (is_previewing ? elapsedSincePreviewStart : 0);
+        currentTimeMs = (ipcManager ? ipcManager->getLastReceivedTimestamp() : 0)
+                        + (is_previewing ? elapsedSincePreviewStart : 0);
         ImGui::Text("Playback position: %llu ms", currentTimeMs);
 
         uint64_t sessionOffset = ipcManager ? ipcManager->getSessionStartOffsetMs() : 0;
@@ -907,7 +898,7 @@ void projectMSDL::renderFrame()
 
         ImGui::SameLine();
 
-        if (ImGui::Button("Save playlist"))
+        if (ImGui::Button("Save playlist") && ipcManager)
         {
             ipcManager->sendCurrentState();
         }
@@ -932,7 +923,7 @@ void projectMSDL::renderFrame()
 
         ImGui::SameLine();
 
-        ImGui::Text("Time: %dms", this->ipcManager->getLastReceivedTimestamp());
+        ImGui::Text("Time: %llums", ipcManager ? ipcManager->getLastReceivedTimestamp() : 0);
 
         ImGui::Separator();
         ImGui::Text("Presets:");
@@ -1117,7 +1108,7 @@ void projectMSDL::renderFrame()
     }
     else if(!is_rendering)
     {
-        glClearColor(0.0, 0.0, 0.0, 0.0);
+        glClearColor(0.0f, 0.0f, 0.0f, render_as_transparency ? 0.0f : 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         renderProjectMFrameWithDiagnostics();
          // Dear ImGui overlay

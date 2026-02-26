@@ -6,6 +6,8 @@ add_executable(LvsAudioReactiveVisualizer
         ConfigFile.cpp
         ConfigFile.h
         audio_loader.cpp
+        loopback.cpp
+        loopback.hpp
         stb_image_write_impl.cpp
         debug_ipc_ui.cpp
         debug_ipc_ui.hpp
@@ -73,10 +75,10 @@ if(MSVC)
                 "lower-than-expected resolution on high-DPI displays.")
     endif()
 
-    add_custom_command(TARGET projectM-Test-UI POST_BUILD
+    add_custom_command(TARGET LvsAudioReactiveVisualizer POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:libprojectM::projectM>
             $<TARGET_FILE:libprojectM::playlist>
-            $<TARGET_FILE_DIR:projectM-Test-UI>
+            $<TARGET_FILE_DIR:LvsAudioReactiveVisualizer>
             )
 endif()
