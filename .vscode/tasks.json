@@ -13,6 +13,13 @@
                 "--target",
                 "LvsAudioReactiveVisualizer"
             ],
+            "linux": {
+                "command": "bash",
+                "args": [
+                    "-lc",
+                    "cmake --build ./out --config Debug --target LvsAudioReactiveVisualizer && chmod +x ./out/src/lvs-ui/LvsAudioReactiveVisualizer"
+                ]
+            },
             "dependsOn": "configure",
             "group": {
                 "kind": "build",
@@ -52,6 +59,13 @@
                 "--target",
                 "LvsAudioReactiveVisualizer"
             ],
+            "linux": {
+                "command": "bash",
+                "args": [
+                    "-lc",
+                    "cmake -S . -B ./out -DCMAKE_BUILD_TYPE=Release -DENABLE_SDL_UI=ON && cmake --build ./out --config Release --target LvsAudioReactiveVisualizer && chmod +x ./out/src/lvs-ui/LvsAudioReactiveVisualizer && mkdir -p ../LyricVIdeoSyncer/BackgroundVisualizer/linux && cp ./out/src/lvs-ui/LvsAudioReactiveVisualizer ../LyricVIdeoSyncer/BackgroundVisualizer/linux/"
+                ]
+            },
             "group": {
                 "kind": "build",
                 "isDefault": true

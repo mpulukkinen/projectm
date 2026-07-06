@@ -2,7 +2,14 @@
 #include "logging.hpp"
 #include <iostream>
 #include <SDL_log.h>
+
+#if defined(_WIN32)
 #include <direct.h>
+#define LVS_GETCWD _getcwd
+#else
+#include <unistd.h>
+#define LVS_GETCWD getcwd
+#endif
 
 IPCManager::IPCManager()
     : lastReceivedTimestampMs(0)
@@ -15,7 +22,7 @@ IPCManager::IPCManager()
     if (logger) logger->log("I AM HERE");
     // Print working directory for diagnostics
     char cwd[512];
-    if (_getcwd(cwd, sizeof(cwd))) {
+    if (LVS_GETCWD(cwd, sizeof(cwd))) {
         SDL_Log("IPCManager: Current working directory: %s", cwd);
     } else {
         SDL_Log("IPCManager: Could not get current working directory");

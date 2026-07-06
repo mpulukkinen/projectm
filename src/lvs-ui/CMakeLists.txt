@@ -35,6 +35,7 @@ target_link_libraries(LvsAudioReactiveVisualizer
         SDL2::SDL2main
         JsonCpp::JsonCpp
         ${CMAKE_DL_LIBS}
+        ${PROJECTM_OPENGL_LIBRARIES}
         glad
         )
 
