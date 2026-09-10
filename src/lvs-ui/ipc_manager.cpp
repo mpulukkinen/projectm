@@ -71,9 +71,6 @@ void IPCManager::handleIPCMessage(const IPC::IPCMessage& msg) {
         case IPC::MessageType::DELETE_PRESET:
             handleDeletePresetMessage(msg);
             break;
-        case IPC::MessageType::MOVE_PRESET:
-            handleMovePresetMessage(msg);
-            break;
         case IPC::MessageType::START_OFFSET:
             handleStartOffsetMessage(msg);
             break;
@@ -148,31 +145,6 @@ void IPCManager::handleDeletePresetMessage(const IPC::IPCMessage& msg) {
         if (removed) {
             pendingStateUpdate = true;
         }
-    }
-}
-
-void IPCManager::handleMovePresetMessage(const IPC::IPCMessage& msg) {
-    if (msg.data.isMember("presetName") &&
-        msg.data.isMember("oldTimestampMs") &&
-        msg.data.isMember("newTimestampMs")) {
-        std::string presetName = msg.data["presetName"].asString();
-        uint64_t oldTimestamp = msg.data["oldTimestampMs"].asUInt64();
-        uint64_t newTimestamp = msg.data["newTimestampMs"].asUInt64();
-
-        bool moved = presetQueue.movePreset(presetName, oldTimestamp, newTimestamp);
-        if (!moved) {
-            SDL_LogWarn(
-                SDL_LOG_CATEGORY_APPLICATION,
-                "IPC: Could not move preset '%s' from %llu ms to %llu ms because the source entry was not found",
-                presetName.c_str(), oldTimestamp, newTimestamp);
-        }
-
-        // Always report the authoritative queue after a move request. On failure this
-        // lets LVS reconcile its marker rather than creating a second queue entry.
-        pendingStateUpdate = true;
-    } else {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "IPC: Missing presetName, oldTimestampMs or newTimestampMs");
-        pendingStateUpdate = true;
     }
 }
 

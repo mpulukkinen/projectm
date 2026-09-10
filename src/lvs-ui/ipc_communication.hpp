@@ -94,6 +94,7 @@ struct IPCMessage {
         Json::Value root;
         Json::CharReaderBuilder reader;
         std::string errs;
+
         std::istringstream stream(jsonStr);
         if (!Json::parseFromStream(reader, stream, &root, &errs)) {
             // Return error message
@@ -220,18 +221,18 @@ public:
     // Stop listening
     void stopListening();
 
-    // Send message with data to C#
-    void sendMessage(const IPCMessage& msg, const std::string& additionalData);
-
     // Send message to C# (write to stdout)
     void sendMessage(const IPCMessage& msg);
+
+    // Send message with data to C#
+    void sendMessage(const IPCMessage& msg, const std::string& additionalData);
 
 private:
     std::thread listenThread;
     bool isListening;
     std::mutex mutex;
 
-    // Thread function
+    // Thread function for listening
     void listenThreadFunc(MessageCallback callback);
 };
 

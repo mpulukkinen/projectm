@@ -38,10 +38,6 @@ public:
     // Remove a preset from the queue
     bool removePreset(const std::string& presetName, uint64_t timestampMs);
 
-    // Move an existing preset atomically to a new timestamp. Returns false when
-    // the exact source entry is no longer present, leaving the queue unchanged.
-    bool movePreset(const std::string& presetName, uint64_t oldTimestampMs, uint64_t newTimestampMs);
-
     // Get all presets sorted by timestamp
     std::vector<PresetEntry> getAllPresets() const;
 

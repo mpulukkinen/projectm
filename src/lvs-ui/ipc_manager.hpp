@@ -55,7 +55,6 @@ public:
     void handleTimestampMessage(const IPC::IPCMessage& msg);
     void handleLoadPresetMessage(const IPC::IPCMessage& msg);
     void handleDeletePresetMessage(const IPC::IPCMessage& msg);
-    void handleMovePresetMessage(const IPC::IPCMessage& msg);
     void handleStartOffsetMessage(const IPC::IPCMessage& msg);
     void handleLengthMessage(const IPC::IPCMessage& msg);
 
