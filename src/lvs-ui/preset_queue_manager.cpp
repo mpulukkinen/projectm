@@ -28,10 +28,22 @@ void PresetQueueManager::addPreset(const std::string& presetName, uint64_t start
 bool PresetQueueManager::removePreset(const std::string& presetName, uint64_t timestampMs) {
     std::lock_guard<std::mutex> lock(mutex);
 
+    // Prefer the exact identity supplied by the caller.
     auto it = std::find_if(presets.begin(), presets.end(),
         [&](const PresetEntry& e) {
             return e.presetName == presetName && e.startTimestampMs == timestampMs;
         });
+
+    if (it == presets.end()) {
+        // addPreset() enforces one queue entry per timestamp, so the timestamp itself
+        // is an unambiguous fallback identity. This also handles the same preset being
+        // represented as a full path when selected in projectM and as a filename when
+        // sent from LVS.
+        it = std::find_if(presets.begin(), presets.end(),
+            [&](const PresetEntry& e) {
+                return e.startTimestampMs == timestampMs;
+            });
+    }
 
     if (it != presets.end()) {
         presets.erase(it);
@@ -209,4 +221,3 @@ void PresetQueueManager::renderUI() {
     }
     ImGui::End();
 }
-
