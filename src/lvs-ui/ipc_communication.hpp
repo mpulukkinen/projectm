@@ -38,10 +38,7 @@ enum class MessageType {
     // Errors
     ERROR_RESPONSE,             // Error in processing
     START_OFFSET,              // C# sends start offset (ms) for session
-    LENGTH,                    // C# sends length (ms) for session
-
-    // Appended to preserve all existing numeric message IDs.
-    MOVE_PRESET                // C# atomically moves an existing queued preset
+    LENGTH                    // C# sends length (ms) for session
 };
 
 // ============================================================================
@@ -98,7 +95,6 @@ struct IPCMessage {
         Json::CharReaderBuilder reader;
         std::string errs;
 
-        std::istringstream stream(jsonStr);
         if (!Json::parseFromStream(reader, stream, &root, &errs)) {
             // Return error message
             IPCMessage msg;
@@ -235,8 +231,8 @@ private:
     bool isListening;
     std::mutex mutex;
 
-    // Thread function
-    void listenThreadFunc(MessageCallback callback);
+    // Thread function for listening
+    void listenThreadFunc();
 };
 
 } // namespace IPC
