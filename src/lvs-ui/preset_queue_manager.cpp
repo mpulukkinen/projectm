@@ -40,6 +40,47 @@ bool PresetQueueManager::removePreset(const std::string& presetName, uint64_t ti
     return false;
 }
 
+bool PresetQueueManager::movePreset(const std::string& presetName, uint64_t oldTimestampMs, uint64_t newTimestampMs) {
+    std::lock_guard<std::mutex> lock(mutex);
+
+    auto sourceIt = std::find_if(presets.begin(), presets.end(),
+        [&](const PresetEntry& e) {
+            return e.presetName == presetName && e.startTimestampMs == oldTimestampMs;
+        });
+
+    if (sourceIt == presets.end()) {
+        return false;
+    }
+
+    if (oldTimestampMs == newTimestampMs) {
+        return true;
+    }
+
+    // Preserve addPreset semantics: only one preset can start at a given timestamp.
+    // If the marker is moved onto another preset, the moved preset replaces it.
+    auto targetIt = std::find_if(presets.begin(), presets.end(),
+        [&](const PresetEntry& e) {
+            return e.startTimestampMs == newTimestampMs;
+        });
+
+    if (targetIt != presets.end() && targetIt != sourceIt) {
+        presets.erase(targetIt);
+
+        // Erasing may invalidate sourceIt, so resolve the exact source again.
+        sourceIt = std::find_if(presets.begin(), presets.end(),
+            [&](const PresetEntry& e) {
+                return e.presetName == presetName && e.startTimestampMs == oldTimestampMs;
+            });
+        if (sourceIt == presets.end()) {
+            return false;
+        }
+    }
+
+    sourceIt->startTimestampMs = newTimestampMs;
+    sortPresets();
+    return true;
+}
+
 std::vector<PresetQueueManager::PresetEntry> PresetQueueManager::getAllPresets() const {
     std::lock_guard<std::mutex> lock(mutex);
     return presets;
