@@ -38,7 +38,10 @@ enum class MessageType {
     // Errors
     ERROR_RESPONSE,             // Error in processing
     START_OFFSET,              // C# sends start offset (ms) for session
-    LENGTH                    // C# sends length (ms) for session
+    LENGTH,                    // C# sends length (ms) for session
+
+    // Appended to preserve all existing numeric message IDs.
+    MOVE_PRESET                // C# atomically moves an existing queued preset
 };
 
 // ============================================================================
@@ -232,7 +235,7 @@ private:
     bool isListening;
     std::mutex mutex;
 
-    // Thread function for listening
+    // Thread function
     void listenThreadFunc(MessageCallback callback);
 };
 
