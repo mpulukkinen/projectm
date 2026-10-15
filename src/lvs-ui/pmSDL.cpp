@@ -720,7 +720,7 @@ bool projectMSDL::updatePresetFromQueue(uint64_t timestampMs, bool doTransition)
 
         if (matchedIndex < preset_list.size()) {
             // Found it! Switch.
-            projectm_playlist_set_position(_playlist, static_cast<uint32_t>(matchedIndex), !doTransition);
+            projectm_playlist_set_position(_playlist, static_cast<uint32_t>(matchedIndex), !(doTransition && enable_preset_transitions));
 
             // Lock it so projectM doesn't auto-switch away immediately
             projectm_set_preset_locked(_projectM, true);
@@ -824,7 +824,7 @@ void projectMSDL::renderFrame()
             else if (timestampChanged || !isInitialPresetLoaded)
             {
                 // Update preset if IPC timestamp changed
-                (void)updatePresetFromQueue(ipcManager->getLastReceivedTimestamp(), true);
+                (void)updatePresetFromQueue(ipcManager->getLastReceivedTimestamp(), false);
                 lastPreviewedPresetTimestamp = ipcManager->getLastReceivedTimestamp();
                 isInitialPresetLoaded = true;
             }
@@ -872,6 +872,7 @@ void projectMSDL::renderFrame()
         ImGui::BulletText("T: Rendering background: %s", transparency.c_str());
         ImGui::BulletText("F5: Preview audio");
         ImGui::BulletText("F6: Render sequence");
+        ImGui::Checkbox("Transitions between scheduled presets", &enable_preset_transitions);
  #if PM_ENABLE_PRESET_DIAGNOSTICS
         ImGui::BulletText("F9: Preset diagnostics (%s)", debug_preset_diagnostics ? "On" : "Off");
         ImGui::BulletText("H: Hide this menu");
@@ -1942,8 +1943,14 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // Reset last applied preset timestamp for rendering
-    this->lastAppliedPresetTimestamp = 0;
+    // Force a clean starting preset even if preview left a transition running.
+    // A hard cut also clears any in-flight transition held by libprojectM.
+    this->lastAppliedPresetTimestamp = std::numeric_limits<uint64_t>::max();
+    if (ipcManager && !ipcManager->getPresetQueue().getAllPresets().empty()) {
+        (void)updatePresetFromQueue(ipcManager->getSessionStartOffsetMs(), false);
+    } else if (!preset_list.empty()) {
+        projectm_playlist_set_position(_playlist, projectm_playlist_get_position(_playlist), true);
+    }
 
     bool doTransition = false;
     //glEnable(GL_FRAMEBUFFER_SRGB);
@@ -1969,7 +1976,7 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
                 break;
             }
 
-            (void)updatePresetFromQueue(session_time_ms, doTransition);
+            (void)updatePresetFromQueue(session_time_ms, doTransition && enable_preset_transitions);
             doTransition = true;
         }
 
