@@ -263,6 +263,7 @@ private:
     bool show_ui{true};
     bool preset_lock{true};
     bool render_as_transparency{false};
+    bool enable_preset_transitions{true}; // Scheduled changes only; manual selections always cut.
     Uint16 preset_duration_sec{20};
     std::string preset_base_path;
     std::vector<std::string> preset_list{};
