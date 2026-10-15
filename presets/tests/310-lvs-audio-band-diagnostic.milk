@@ -1,7 +1,7 @@
 [preset00]
-; LVS audio diagnostic: frequency spectrum plus three independent band meters.
-; Left=LOW/bass (red), centre=MID (green), right=HIGH/treble (blue).
-; The circles are intentionally visible even in silence.
+// LVS audio diagnostic: frequency spectrum plus three independent band meters.
+// Left=LOW/bass (red), centre=MID (green), right=HIGH/treble (blue).
+// The circles are intentionally visible even in silence.
 fDecay=0
 zoom=1
 warp=0
@@ -11,7 +11,7 @@ ob_size=0
 ib_size=0
 bDarkenCenter=0
 
-; Spectrum across lower half of the screen: FFT value1 from projectM.
+// Spectrum across lower half of the screen: FFT value1 from projectM.
 wavecode_0_enabled=1
 wavecode_0_samples=512
 wavecode_0_bSpectrum=1
@@ -27,7 +27,7 @@ wavecode_0_a=1
 wave_0_per_point1=x=sample;
 wave_0_per_point2=y=0.17+min(0.25,abs(value1)*0.12);
 
-; LOW - bass audio-reactive solid circle
+// LOW - bass audio-reactive solid circle
 shapecode_0_enabled=1
 shapecode_0_sides=64
 shapecode_0_additive=0
@@ -46,7 +46,7 @@ shapecode_0_a2=0.85
 shapecode_0_border_a=1
 shape_0_per_frame1=rad=0.045+0.075*min(1,max(0,bass)/2);
 
-; MID audio-reactive solid circle
+// MID audio-reactive solid circle
 shapecode_1_enabled=1
 shapecode_1_sides=64
 shapecode_1_additive=0
@@ -65,7 +65,7 @@ shapecode_1_a2=0.85
 shapecode_1_border_a=1
 shape_1_per_frame1=rad=0.045+0.075*min(1,max(0,mid)/2);
 
-; HIGH - treble audio-reactive solid circle
+// HIGH - treble audio-reactive solid circle
 shapecode_2_enabled=1
 shapecode_2_sides=64
 shapecode_2_additive=0
