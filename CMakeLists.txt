@@ -30,14 +30,6 @@ option(ENABLE_VERBOSE_LOGGING "Enables TRACE and DEBUG logging even in release b
 # Opt-in native Linux memory diagnostics. Instrument all projectM targets so that
 # memory errors crossing shared-library boundaries are visible to ASan.
 option(LVS_ENABLE_ASAN "Build projectM and the LVS visualizer with AddressSanitizer (Linux diagnostic builds only)" OFF)
-if(LVS_ENABLE_ASAN)
-    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        message(FATAL_ERROR "LVS_ENABLE_ASAN requires Linux with GCC or Clang")
-    endif()
-    add_compile_options(-fsanitize=address -fno-omit-frame-pointer -g)
-    add_link_options(-fsanitize=address)
-    message(STATUS "LVS AddressSanitizer diagnostics enabled (do not ship this build)")
-endif()
 
 option(BUILD_TESTING "Build the libprojectM test suite" OFF)
 option(BUILD_DOCS "Build documentation" OFF)
@@ -67,6 +59,16 @@ project(libprojectM
         LANGUAGES C CXX
         VERSION 4.1.0
         )
+
+# Compiler identification becomes available only after project() enables C/C++.
+if(LVS_ENABLE_ASAN)
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        message(FATAL_ERROR "LVS_ENABLE_ASAN requires Linux with GCC or Clang")
+    endif()
+    add_compile_options(-fsanitize=address -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=address)
+    message(STATUS "LVS AddressSanitizer diagnostics enabled (do not ship this build)")
+endif()
 
 # The API (SO) version for the shared library. Should be incremented whenever the binary interface changes
 # in a non-backwards-compatible way, e.g. changing parameters or return values of existing functions or removing
