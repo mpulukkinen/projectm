@@ -34,6 +34,7 @@
 
 #include <vector>
 #include <thread>
+#include <functional>
 
 #include <filesystem>
 #include <string>
