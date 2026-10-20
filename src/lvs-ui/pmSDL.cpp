@@ -1418,15 +1418,33 @@ void projectMSDL::startPresetDiscovery()
 
     StartupLog("preset discovery: async scan start (%s)", preset_base_path.c_str());
     preset_discovery_thread = std::thread([this]() {
+        const auto scanStart = std::chrono::steady_clock::now();
+        StartupLog("preset discovery: worker entered (thread=%zu, directory=%s)",
+                   std::hash<std::thread::id>{}(std::this_thread::get_id()), preset_base_path.c_str());
+        size_t scannedEntries = 0;
+        size_t matchedPresets = 0;
         std::vector<std::string> staged;
         staged.reserve(2048);
         try {
             for (const auto& entry : std::filesystem::recursive_directory_iterator(preset_base_path)) {
+                ++scannedEntries;
+                if (scannedEntries == 1) {
+                    StartupLog("preset discovery: first filesystem entry reached");
+                }
+                if (scannedEntries % 2000 == 0) {
+                    StartupLog("preset discovery: progress (entries=%zu, milk=%zu, queued=%zu, elapsed=%llums)",
+                               scannedEntries, matchedPresets, discovered_preset_total.load(),
+                               static_cast<unsigned long long>(ElapsedMsSince(scanStart)));
+                }
                 if (!entry.is_regular_file()) {
                     continue;
                 }
                 if (toLowerAscii(entry.path().extension().string()) != ".milk") {
                     continue;
+                }
+                ++matchedPresets;
+                if (matchedPresets == 1) {
+                    StartupLog("preset discovery: first .milk preset found");
                 }
                 staged.push_back(entry.path().string());
                 if (staged.size() >= 2048) {
@@ -1439,7 +1457,8 @@ void projectMSDL::startPresetDiscovery()
                 }
             }
         } catch (const std::exception& e) {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Preset discovery failed: %s", e.what());
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Preset discovery failed after %zu entries / %zu presets: %s",
+                        scannedEntries, matchedPresets, e.what());
         }
 
         if (!staged.empty()) {
@@ -1453,7 +1472,10 @@ void projectMSDL::startPresetDiscovery()
 
         preset_discovery_finished = true;
         preset_discovery_in_progress = false;
-        StartupLog("preset discovery: async scan end (found=%zu)", discovered_preset_total.load());
+        StartupLog("preset discovery: async scan end (found=%zu, entries=%zu, elapsed=%llums, thread=%zu)",
+                   discovered_preset_total.load(), scannedEntries,
+                   static_cast<unsigned long long>(ElapsedMsSince(scanStart)),
+                   std::hash<std::thread::id>{}(std::this_thread::get_id()));
     });
 }
 
@@ -1477,12 +1499,19 @@ void projectMSDL::applyDiscoveredPresetBatch()
     }
 
     if (!batch.empty()) {
+        const auto batchStart = std::chrono::steady_clock::now();
+        StartupLog("preset discovery: applying batch (size=%zu, insertedBefore=%zu, thread=%zu)",
+                   batch.size(), inserted_preset_total.load(),
+                   std::hash<std::thread::id>{}(std::this_thread::get_id()));
         for (const auto& presetPath : batch) {
             if (projectm_playlist_add_preset(_playlist, presetPath.c_str(), false)) {
                 inserted_preset_total++;
                 inserted_preset_paths.push_back(presetPath);
             }
         }
+        StartupLog("preset discovery: applied batch (insertedTotal=%zu, elapsed=%llums)",
+                   inserted_preset_total.load(),
+                   static_cast<unsigned long long>(ElapsedMsSince(batchStart)));
     }
 
     if (preset_discovery_finished && !preset_discovery_applied_once) {
