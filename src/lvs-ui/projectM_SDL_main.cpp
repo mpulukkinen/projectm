@@ -34,6 +34,7 @@
 #include "pmSDL.hpp"
 #include "startup_timing.hpp"
 #include <cstdlib>
+#include <functional>
 
 #ifdef _WIN32
 #include <io.h>
