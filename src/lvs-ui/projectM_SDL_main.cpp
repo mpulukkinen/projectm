@@ -34,6 +34,7 @@
 #include "pmSDL.hpp"
 #include "startup_timing.hpp"
 #include <cstdlib>
+#include <functional>
 
 #ifdef _WIN32
 #include <io.h>
@@ -58,10 +59,20 @@ static int mainLoop(void *userData) {
     const Uint32 frame_delay = 1000/fps;
     Uint32 last_time = SDL_GetTicks();
 
+    // Preserve the existing rendering flow; log the first frame boundary so
+    // native crashes can be distinguished from initialization failures.
+    StartupLog("main loop: entering (fps=%d, thread=%zu)", fps,
+               std::hash<std::thread::id>{}(std::this_thread::get_id()));
+    size_t frameNumber = 0;
     // loop
     while (!app->done) {
+        if (frameNumber == 0)
+            StartupLog("main loop: first renderFrame begin");
         // render
         app->renderFrame();
+        if (frameNumber == 0)
+            StartupLog("main loop: first renderFrame complete");
+        ++frameNumber;
 
 
 #if UNLOCK_FPS
