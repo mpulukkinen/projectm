@@ -264,6 +264,11 @@ private:
     bool preset_lock{true};
     bool render_as_transparency{false};
     bool enable_preset_transitions{true}; // Scheduled changes only; manual selections always cut.
+    bool play_random_presets{false};
+    int random_preset_interval_sec{5};
+    std::vector<size_t> random_preset_order{};
+    uint64_t last_random_preset_slot{std::numeric_limits<uint64_t>::max()};
+    void applyRandomPreset(uint64_t timestampMs, bool allowTransition);
     Uint16 preset_duration_sec{20};
     std::string preset_base_path;
     std::vector<std::string> preset_list{};
