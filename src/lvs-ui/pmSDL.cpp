@@ -41,6 +41,8 @@
 #include <algorithm>
 #include <cctype>
 #include <limits>
+#include <numeric>
+#include <random>
 #include "../../vendor/stb_image/stb_image_write.h"
 #include "text_render.h"
 // Dear ImGui
@@ -735,6 +737,38 @@ bool projectMSDL::updatePresetFromQueue(uint64_t timestampMs, bool doTransition)
     return false;
 }
 
+void projectMSDL::applyRandomPreset(uint64_t timestampMs, bool allowTransition)
+{
+    if (!play_random_presets || preset_list.empty()) {
+        return;
+    }
+
+    if (random_preset_order.size() != preset_list.size()) {
+        random_preset_order.resize(preset_list.size());
+        std::iota(random_preset_order.begin(), random_preset_order.end(), size_t{0});
+        std::mt19937 generator(std::random_device{}());
+        std::shuffle(random_preset_order.begin(), random_preset_order.end(), generator);
+        last_random_preset_slot = std::numeric_limits<uint64_t>::max();
+    }
+
+    const uint64_t sessionStart = ipcManager ? ipcManager->getSessionStartOffsetMs() : 0;
+    const uint64_t relativeTime = timestampMs > sessionStart ? timestampMs - sessionStart : 0;
+    const uint64_t slot = relativeTime / (static_cast<uint64_t>(random_preset_interval_sec) * 1000);
+    if (slot == last_random_preset_slot) {
+        return;
+    }
+
+    const size_t position = random_preset_order[slot % random_preset_order.size()];
+    // Avoid transitions on initial selection or seeking; subsequent automatic changes
+    // honor the existing transition toggle.
+    const bool hardCut = !allowTransition || !enable_preset_transitions ||
+        last_random_preset_slot == std::numeric_limits<uint64_t>::max();
+    projectm_playlist_set_position(_playlist, static_cast<uint32_t>(position), hardCut);
+    projectm_set_preset_locked(_projectM, true);
+    last_random_preset_slot = slot;
+    UpdateWindowTitle();
+}
+
 void projectMSDL::renderFrame()
 {
     if (!preset_discovery_started) {
@@ -811,7 +845,11 @@ void projectMSDL::renderFrame()
                     // Update audio preview timestamp
 
                     // Check if there's an active preset at the current timestamp
-                    (void)updatePresetFromQueue(static_cast<uint64_t>(elapsed_ms), doPreviewTransition);
+                    if (play_random_presets) {
+                        applyRandomPreset(static_cast<uint64_t>(elapsed_ms), doPreviewTransition);
+                    } else {
+                        (void)updatePresetFromQueue(static_cast<uint64_t>(elapsed_ms), doPreviewTransition);
+                    }
                     doPreviewTransition = true;
 
                     // Update lastPreviewedPresetTimestamp when timestamp changed externally
@@ -825,7 +863,9 @@ void projectMSDL::renderFrame()
             else if (timestampChanged || !isInitialPresetLoaded)
             {
                 // Update preset if IPC timestamp changed
-                (void)updatePresetFromQueue(ipcManager->getLastReceivedTimestamp(), false);
+                if (!play_random_presets) {
+                    (void)updatePresetFromQueue(ipcManager->getLastReceivedTimestamp(), false);
+                }
                 lastPreviewedPresetTimestamp = ipcManager->getLastReceivedTimestamp();
                 isInitialPresetLoaded = true;
             }
@@ -874,6 +914,16 @@ void projectMSDL::renderFrame()
         ImGui::BulletText("F5: Preview audio");
         ImGui::BulletText("F6: Render sequence");
         ImGui::Checkbox("Transitions between scheduled presets", &enable_preset_transitions);
+        if (ImGui::Checkbox("Play all presets randomly", &play_random_presets)) {
+            last_random_preset_slot = std::numeric_limits<uint64_t>::max();
+        }
+        if (play_random_presets) {
+            if (ImGui::InputInt("Preset change interval (seconds)", &random_preset_interval_sec)) {
+                random_preset_interval_sec = std::clamp(random_preset_interval_sec, 1, 3600);
+                last_random_preset_slot = std::numeric_limits<uint64_t>::max();
+            }
+            ImGui::TextDisabled("Random playback does not modify the saved preset queue.");
+        }
  #if PM_ENABLE_PRESET_DIAGNOSTICS
         ImGui::BulletText("F9: Preset diagnostics (%s)", debug_preset_diagnostics ? "On" : "Off");
         ImGui::BulletText("H: Hide this menu");
@@ -1168,6 +1218,8 @@ void projectMSDL::presetClicked(size_t i)
         return;
     }
 
+    play_random_presets = false; // Manual selection returns to the existing queue workflow.
+    last_random_preset_slot = std::numeric_limits<uint64_t>::max();
     auto_focus_tree_on_preset_change = true;
     projectm_playlist_set_position(_playlist, static_cast<uint32_t>(i), true);
     projectm_set_preset_locked(_projectM, preset_lock);
@@ -1976,7 +2028,10 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
     // Force a clean starting preset even if preview left a transition running.
     // A hard cut also clears any in-flight transition held by libprojectM.
     this->lastAppliedPresetTimestamp = std::numeric_limits<uint64_t>::max();
-    if (ipcManager && !ipcManager->getPresetQueue().getAllPresets().empty()) {
+    if (play_random_presets && !preset_list.empty()) {
+        last_random_preset_slot = std::numeric_limits<uint64_t>::max();
+        applyRandomPreset(ipcManager ? ipcManager->getSessionStartOffsetMs() : 0, false);
+    } else if (ipcManager && !ipcManager->getPresetQueue().getAllPresets().empty()) {
         (void)updatePresetFromQueue(ipcManager->getSessionStartOffsetMs(), false);
     } else if (!preset_list.empty()) {
         projectm_playlist_set_position(_playlist, projectm_playlist_get_position(_playlist), true);
@@ -2006,7 +2061,11 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
                 break;
             }
 
-            (void)updatePresetFromQueue(session_time_ms, doTransition && enable_preset_transitions);
+            if (play_random_presets) {
+                applyRandomPreset(session_time_ms, doTransition);
+            } else {
+                (void)updatePresetFromQueue(session_time_ms, doTransition && enable_preset_transitions);
+            }
             doTransition = true;
         }
 
