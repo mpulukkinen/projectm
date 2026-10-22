@@ -89,6 +89,7 @@
 #include <mutex>
 #include <memory>
 #include <chrono>
+#include <limits>
 
 #if defined(NDEBUG)
 #define PM_ENABLE_PRESET_DIAGNOSTICS 0
