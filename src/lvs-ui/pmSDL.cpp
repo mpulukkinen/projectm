@@ -30,6 +30,7 @@
 */
 
 #include "pmSDL.hpp"
+#include "random_preset_interval.hpp"
 #include "startup_timing.hpp"
 
 #include <vector>
@@ -40,6 +41,7 @@
 #include <string>
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <limits>
 #include <numeric>
 #include <random>
@@ -753,7 +755,7 @@ void projectMSDL::applyRandomPreset(uint64_t timestampMs, bool allowTransition)
 
     const uint64_t sessionStart = ipcManager ? ipcManager->getSessionStartOffsetMs() : 0;
     const uint64_t relativeTime = timestampMs > sessionStart ? timestampMs - sessionStart : 0;
-    const uint64_t slot = relativeTime / (static_cast<uint64_t>(random_preset_interval_sec) * 1000);
+    const uint64_t slot = relativeTime / random_preset_interval_ms;
     if (slot == last_random_preset_slot) {
         return;
     }
@@ -918,10 +920,31 @@ void projectMSDL::renderFrame()
             last_random_preset_slot = std::numeric_limits<uint64_t>::max();
         }
         if (play_random_presets) {
-            if (ImGui::InputInt("Preset change interval (seconds)", &random_preset_interval_sec)) {
-                random_preset_interval_sec = std::clamp(random_preset_interval_sec, 1, 3600);
-                last_random_preset_slot = std::numeric_limits<uint64_t>::max();
+            // InputFloat follows the active locale, so accept both decimal separators explicitly.
+            const bool submitted = ImGui::InputText(
+                "Preset change interval (seconds)",
+                random_preset_interval_text,
+                sizeof(random_preset_interval_text),
+                ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackCharFilter,
+                [](ImGuiInputTextCallbackData* data) -> int {
+                    const ImWchar ch = data->EventChar;
+                    return (ch >= '0' && ch <= '9') || ch == '.' || ch == ',' ? 0 : 1;
+                });
+            if (submitted || ImGui::IsItemDeactivatedAfterEdit()) {
+                uint64_t intervalMs = 0;
+                if (lvs::parseRandomPresetIntervalMs(random_preset_interval_text, intervalMs)) {
+                    if (intervalMs != random_preset_interval_ms) {
+                        random_preset_interval_ms = intervalMs;
+                        last_random_preset_slot = std::numeric_limits<uint64_t>::max();
+                    }
+                } else {
+                    // Keep the last valid interval and restore its text if editing was invalid.
+                    const std::string restored = lvs::formatRandomPresetIntervalMs(random_preset_interval_ms);
+                    std::snprintf(random_preset_interval_text, sizeof(random_preset_interval_text),
+                                  "%s", restored.c_str());
+                }
             }
+            ImGui::TextDisabled("0.01-3600 seconds. Both '.' and ',' work as decimal separators.");
             ImGui::TextDisabled("Random playback does not modify the saved preset queue.");
         }
  #if PM_ENABLE_PRESET_DIAGNOSTICS

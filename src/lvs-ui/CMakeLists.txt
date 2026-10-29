@@ -83,3 +83,10 @@ if(MSVC)
             $<TARGET_FILE_DIR:LvsAudioReactiveVisualizer>
             )
 endif()
+
+if(BUILD_TESTING)
+    add_executable(lvs_random_preset_interval_tests
+            tests/random_preset_interval_tests.cpp
+            )
+    add_test(NAME lvs_random_preset_interval_tests COMMAND lvs_random_preset_interval_tests)
+endif()
