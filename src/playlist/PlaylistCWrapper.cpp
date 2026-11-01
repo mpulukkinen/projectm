@@ -138,6 +138,10 @@ void PlaylistCWrapper::PlayPresetIndex(uint32_t index, bool hardCut, bool resetF
             }
         }
 
+        // Clear the error from any previous switch before attempting a new load.
+        // Otherwise a valid preset can look like a failure after retry count 1.
+        m_lastPresetSwitchFailed = false;
+
         // Default behavior: load from filesystem
         projectm_load_preset_file(m_projectMInstance, filename.c_str(), !hardCut);
 
