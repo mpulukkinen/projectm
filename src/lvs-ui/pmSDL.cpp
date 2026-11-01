@@ -32,6 +32,7 @@
 #include "pmSDL.hpp"
 #include "random_preset_interval.hpp"
 #include "startup_timing.hpp"
+#include <projectM-4/parameters.h>
 
 #include <vector>
 #include <thread>
@@ -915,7 +916,7 @@ void projectMSDL::renderFrame()
         ImGui::BulletText("T: Rendering background: %s", transparency.c_str());
         ImGui::BulletText("F5: Preview audio");
         ImGui::BulletText("F6: Render sequence");
-        ImGui::Checkbox("Transitions between scheduled presets", &enable_preset_transitions);
+        ImGui::Checkbox("Transitions between scheduled and random presets", &enable_preset_transitions);
         if (ImGui::Checkbox("Play all presets randomly", &play_random_presets)) {
             last_random_preset_slot = std::numeric_limits<uint64_t>::max();
         }
@@ -2060,6 +2061,13 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
         projectm_playlist_set_position(_playlist, projectm_playlist_get_position(_playlist), true);
     }
 
+    // Smooth transitions use libprojectM's frame clock. During offline rendering we
+    // advance through song frames independently of real elapsed time, so the clock
+    // must follow the rendered frames rather than wall time. Preserve its current
+    // value to avoid jumping backwards after a preview session.
+    const double randomRenderClockStart = play_random_presets
+        ? projectm_get_frame_time(_projectM) : 0.0;
+
     bool doTransition = false;
     //glEnable(GL_FRAMEBUFFER_SRGB);
     // For each frame, feed audio slice and render for each resolution
@@ -2085,6 +2093,9 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
             }
 
             if (play_random_presets) {
+                // Keep transition progress in sync with output video timestamps,
+                // even when exporting faster or slower than real time.
+                projectm_set_frame_time(_projectM, randomRenderClockStart + current_time_sec);
                 applyRandomPreset(session_time_ms, doTransition);
             } else {
                 (void)updatePresetFromQueue(session_time_ms, doTransition && enable_preset_transitions);
