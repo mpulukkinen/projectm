@@ -2066,7 +2066,7 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
     // must follow the rendered frames rather than wall time. Preserve its current
     // value to avoid jumping backwards after a preview session.
     const double randomRenderClockStart = play_random_presets
-        ? projectm_get_frame_time(_projectM) : 0.0;
+        ? projectm_get_last_frame_time(_projectM) : 0.0;
 
     bool doTransition = false;
     //glEnable(GL_FRAMEBUFFER_SRGB);
