@@ -849,16 +849,8 @@ void projectMSDL::selectInitialPreset()
 
 void projectMSDL::applyRandomPreset(uint64_t timestampMs, bool allowTransition)
 {
-    if (!play_random_presets || preset_list.empty()) {
+    if (!play_random_presets) {
         return;
-    }
-
-    if (random_preset_order.size() != preset_list.size()) {
-        random_preset_order.resize(preset_list.size());
-        std::iota(random_preset_order.begin(), random_preset_order.end(), size_t{0});
-        std::mt19937 generator(std::random_device{}());
-        std::shuffle(random_preset_order.begin(), random_preset_order.end(), generator);
-        last_random_preset_slot = std::numeric_limits<uint64_t>::max();
     }
 
     const uint64_t sessionStart = ipcManager ? ipcManager->getSessionStartOffsetMs() : 0;
@@ -866,6 +858,31 @@ void projectMSDL::applyRandomPreset(uint64_t timestampMs, bool allowTransition)
     const uint64_t slot = relativeTime / random_preset_interval_ms;
     if (slot == last_random_preset_slot) {
         return;
+    }
+
+    // When a loaded queue exists, keep its first preset on screen for the
+    // first interval. Random playback takes over at the next change boundary.
+    if (slot == 0 && ipcManager && ipcManager->getPresetQueue().getPresetCount() != 0) {
+        if (selectFirstQueuedPreset()) {
+            last_random_preset_slot = 0;
+            ipcManager->needsFirstPresetAutoLoad = false;
+        }
+        return;
+    }
+
+    if (preset_list.empty()) {
+        return;
+    }
+
+    if (random_preset_order.size() != preset_list.size()) {
+        // An initial queued preset still counts as the preceding selection,
+        // allowing a smooth transition to the first randomized preset.
+        const bool wasQueuedFirst = last_random_preset_slot == 0 && random_preset_order.empty();
+        random_preset_order.resize(preset_list.size());
+        std::iota(random_preset_order.begin(), random_preset_order.end(), size_t{0});
+        std::mt19937 generator(std::random_device{}());
+        std::shuffle(random_preset_order.begin(), random_preset_order.end(), generator);
+        last_random_preset_slot = wasQueuedFirst ? 0 : std::numeric_limits<uint64_t>::max();
     }
 
     const size_t position = random_preset_order[slot % random_preset_order.size()];
@@ -2144,6 +2161,9 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
     // Start with a real preset even when the user renders before the async
     // preset cache is ready. A saved queue takes priority over folder defaults.
     this->lastAppliedPresetTimestamp = std::numeric_limits<uint64_t>::max();
+    if (play_random_presets) {
+        last_random_preset_slot = std::numeric_limits<uint64_t>::max();
+    }
     if (ipcManager && ipcManager->getPresetQueue().getPresetCount() != 0) {
         if (!updatePresetFromQueue(ipcManager->getSessionStartOffsetMs(), false)) {
             (void)selectFirstQueuedPreset();
