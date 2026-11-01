@@ -766,15 +766,28 @@ bool projectMSDL::selectFirstQueuedPreset()
     }
 
     const auto& firstPreset = queuedPresets.front();
+    if (play_random_presets &&
+        failed_first_queued_preset_name == firstPreset.presetName) {
+        return false;
+    }
 
     // Prefer the existing async-built lookup cache when it is already ready.
     // The cache can take time to build for large preset sets, however, so
     // loading a saved queue must also work before cache initialization ends.
     lastAppliedPresetTimestamp = std::numeric_limits<uint64_t>::max();
+    random_preset_load_failed = false;
     if (updatePresetFromQueue(firstPreset.startTimestampMs, false)) {
-        startupPresetSelected = true;
-        isInitialPresetLoaded = true;
-        return true;
+        if (!random_preset_load_failed) {
+            startupPresetSelected = true;
+            isInitialPresetLoaded = true;
+            return true;
+        }
+    }
+    if (random_preset_load_failed) {
+        if (play_random_presets) {
+            failed_first_queued_preset_name = firstPreset.presetName;
+        }
+        return false;
     }
 
     const uint32_t playlistSize = projectm_playlist_size(_playlist);
@@ -825,7 +838,14 @@ bool projectMSDL::selectFirstQueuedPreset()
         return false;
     }
 
+    random_preset_load_failed = false;
     projectm_playlist_set_position(_playlist, matchedIndex, true);
+    if (random_preset_load_failed) {
+        if (play_random_presets) {
+            failed_first_queued_preset_name = firstPreset.presetName;
+        }
+        return false;
+    }
     projectm_set_preset_locked(_projectM, true);
     lastAppliedPresetTimestamp = firstPreset.startTimestampMs;
     startupPresetSelected = true;
@@ -877,14 +897,14 @@ void projectMSDL::applyRandomPreset(uint64_t timestampMs, bool allowTransition)
         return;
     }
 
-    // When a loaded queue exists, keep its first preset on screen for the
-    // first interval. Random playback takes over at the next change boundary.
+    // A loaded queue takes priority for the first interval. If the first
+    // queued preset fails, try the next random candidate right away.
     if (slot == 0 && ipcManager && ipcManager->getPresetQueue().getPresetCount() != 0) {
         if (selectFirstQueuedPreset()) {
             last_random_preset_slot = 0;
             ipcManager->needsFirstPresetAutoLoad = false;
+            return;
         }
-        return;
     }
 
     // Random playback indexes the live projectM playlist, not the async UI
@@ -905,15 +925,57 @@ void projectMSDL::applyRandomPreset(uint64_t timestampMs, bool allowTransition)
         last_random_preset_slot = wasQueuedFirst ? 0 : std::numeric_limits<uint64_t>::max();
     }
 
-    const size_t position = random_preset_order[slot % random_preset_order.size()];
-    // Avoid transitions on initial selection or seeking; subsequent automatic changes
-    // honor the existing transition toggle.
-    const bool hardCut = !allowTransition || !enable_preset_transitions ||
-        last_random_preset_slot == std::numeric_limits<uint64_t>::max();
-    projectm_playlist_set_position(_playlist, static_cast<uint32_t>(position), hardCut);
-    projectm_set_preset_locked(_projectM, true);
+    // Retry in the current frame, so a failed preset never gets exported as a
+    // black frame. Bound the number of expensive loads for all-broken packs.
+    constexpr size_t kMaxLoadsPerChange = 64;
+    const size_t maxAttempts = std::min(random_preset_order.size(), kMaxLoadsPerChange);
+    const size_t firstPosition = slot % random_preset_order.size();
+    bool retrying = false;
+    size_t attempts = 0;
+
+    for (size_t checked = 0;
+         checked < random_preset_order.size() && attempts < maxAttempts; ++checked) {
+        const size_t position = random_preset_order[(firstPosition + checked) % random_preset_order.size()];
+        char* candidate = projectm_playlist_item(_playlist, static_cast<uint32_t>(position));
+        if (!candidate) {
+            continue;
+        }
+
+        const std::string pathKey = normalizePathLower(candidate);
+        projectm_playlist_free_string(candidate);
+        if (failed_random_preset_paths.count(pathKey) != 0) {
+            continue;
+        }
+
+        ++attempts;
+        random_preset_load_failed = false;
+        // After a failure, hard-cut rather than blend a partially loaded preset.
+        // Normal scheduled random changes still use the transition toggle.
+        const bool hardCut = retrying || !allowTransition || !enable_preset_transitions ||
+            last_random_preset_slot == std::numeric_limits<uint64_t>::max();
+        projectm_playlist_set_position(_playlist, static_cast<uint32_t>(position), hardCut);
+        if (random_preset_load_failed) {
+            retrying = true;
+            continue;
+        }
+
+        projectm_set_preset_locked(_projectM, true);
+        last_random_preset_slot = slot;
+        if (ipcManager) {
+            ipcManager->needsFirstPresetAutoLoad = false;
+        }
+        UpdateWindowTitle();
+        return;
+    }
+
     last_random_preset_slot = slot;
-    UpdateWindowTitle();
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                 "No loadable random preset found after %zu attempts. Stopping to avoid black frames.",
+                 attempts);
+    if (is_rendering) {
+        random_preset_render_failed = true;
+        is_rendering = false;
+    }
 }
 
 void projectMSDL::renderFrame()
@@ -1540,12 +1602,24 @@ void projectMSDL::presetSwitchFailedEvent(const char* presetFilename, const char
     }
 
     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                "Preset load failed and was removed from playlist: %s | reason: %s\n",
+                "Preset load failed: %s | reason: %s\n",
                 presetFilename ? presetFilename : "<unknown>",
                 message ? message : "<no details>");
     app->last_preset_load_error = std::string(presetFilename ? presetFilename : "<unknown>")
                                 + " | reason: "
                                 + std::string(message ? message : "<no details>");
+
+    if (app->play_random_presets) {
+        // The playlist calls this callback synchronously before set_position()
+        // returns. Do not switch again here; the caller handles retries safely.
+        app->random_preset_load_failed = true;
+        if (presetFilename && *presetFilename) {
+            app->failed_random_preset_paths.insert(normalizePathLower(presetFilename));
+        }
+        // The playlist uses retry count 1, so it does not remove the failed
+        // entry. Rebuilding the 9k+ preset UI cache on each failure is unnecessary.
+        return;
+    }
 
     app->refreshPresetCache(app->auto_focus_tree_on_preset_change);
 }
@@ -2117,6 +2191,7 @@ static ResolveBuffer resolveFBO;
 
 void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const Uint8* audioBuf, Uint32 audioLen,
                                  const std::string& outDir, size_t fps, const std::vector<std::pair<int,int>>& resolutions) {
+    random_preset_render_failed = false;
     if (!std::filesystem::exists(outDir)) {
         std::error_code ec;
         std::filesystem::create_directories(outDir, ec);
@@ -2243,6 +2318,9 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
                 (void)updatePresetFromQueue(session_time_ms, doTransition && enable_preset_transitions);
             }
             doTransition = true;
+            if (!is_rendering) {
+                break; // Exhausted random retries: never write a black frame.
+            }
         }
 
         // CRITICAL: Bind the 4K FBO BEFORE rendering so projectM renders at full resolution
@@ -2384,8 +2462,14 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
     this->stretch = saved_stretch;
 
     // final progress and state
+    const bool failed = random_preset_render_failed;
     this->render_progress.store(is_rendering ? 1.0f : 0.0f);
     is_rendering = false;
+    if (failed) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Render aborted: all attempted random presets failed to load.");
+        done = true;
+        exit(1);
+    }
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Render complete. %zu frames written to %s", totalFrames, outDir.c_str());
     done = true;
     exit(0); // exit after rendering in CLI mode
