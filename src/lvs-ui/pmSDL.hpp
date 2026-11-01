@@ -86,6 +86,7 @@
 #include <thread>
 #include <map>
 #include <unordered_map>
+#include <unordered_set>
 #include <mutex>
 #include <memory>
 #include <chrono>
@@ -271,6 +272,10 @@ private:
     uint64_t random_preset_interval_ms{5000};
     char random_preset_interval_text[32]{"5"};
     std::vector<size_t> random_preset_order{};
+    std::unordered_set<std::string> failed_random_preset_paths{};
+    std::string failed_first_queued_preset_name{};
+    bool random_preset_load_failed{false};
+    bool random_preset_render_failed{false};
     uint64_t last_random_preset_slot{std::numeric_limits<uint64_t>::max()};
     void applyRandomPreset(uint64_t timestampMs, bool allowTransition);
     Uint16 preset_duration_sec{20};
