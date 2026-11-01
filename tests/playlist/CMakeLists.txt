@@ -34,6 +34,7 @@ add_executable(projectM-playlist-unittest
         ItemTest.cpp
         PlaylistCWrapperMock.h
         PlaylistTest.cpp
+        PlaylistCWrapperFailureTest.cpp
         ProjectMAPIMocks.cpp
         FilterTest.cpp
         )
