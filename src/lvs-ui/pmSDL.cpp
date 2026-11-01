@@ -740,6 +740,113 @@ bool projectMSDL::updatePresetFromQueue(uint64_t timestampMs, bool doTransition)
     return false;
 }
 
+
+bool projectMSDL::selectFirstQueuedPreset()
+{
+    if (!ipcManager || !_playlist) {
+        return false;
+    }
+
+    const auto queuedPresets = ipcManager->getPresetQueue().getAllPresets();
+    if (queuedPresets.empty()) {
+        return false;
+    }
+
+    const auto& firstPreset = queuedPresets.front();
+
+    // Prefer the existing async-built lookup cache when it is already ready.
+    // The cache can take time to build for large preset sets, however, so
+    // loading a saved queue must also work before cache initialization ends.
+    lastAppliedPresetTimestamp = std::numeric_limits<uint64_t>::max();
+    if (updatePresetFromQueue(firstPreset.startTimestampMs, false)) {
+        startupPresetSelected = true;
+        isInitialPresetLoaded = true;
+        return true;
+    }
+
+    const uint32_t playlistSize = projectm_playlist_size(_playlist);
+    if (playlistSize == lastStartupQueueLookupSize &&
+        firstPreset.presetName == lastStartupQueueLookupName) {
+        return false;
+    }
+    lastStartupQueueLookupSize = playlistSize;
+    lastStartupQueueLookupName = firstPreset.presetName;
+
+    const std::string requestedPath = normalizePathLower(firstPreset.presetName);
+    const std::string requestedRelativePath =
+        normalizePathLower(trimLeadingSeparators(firstPreset.presetName));
+    const std::string requestedFilename = toLowerAscii(filenameFromPath(firstPreset.presetName));
+    uint32_t relativeMatch = playlistSize;
+    uint32_t filenameMatch = playlistSize;
+    uint32_t matchedIndex = playlistSize;
+
+    // Resolve paths against the live playlist so immediate rendering does
+    // not depend on the asynchronous preset cache finishing first.
+    for (uint32_t i = 0; i < playlistSize; ++i) {
+        char* item = projectm_playlist_item(_playlist, i);
+        if (!item) {
+            continue;
+        }
+
+        const std::string path(item);
+        projectm_playlist_free_string(item);
+
+        if (normalizePathLower(path) == requestedPath) {
+            matchedIndex = i;
+            break;
+        }
+        if (relativeMatch == playlistSize &&
+            normalizePathLower(relativePathOrOriginal(path, preset_base_path)) == requestedRelativePath) {
+            relativeMatch = i;
+        }
+        if (filenameMatch == playlistSize &&
+            toLowerAscii(filenameFromPath(path)) == requestedFilename) {
+            filenameMatch = i;
+        }
+    }
+
+    if (matchedIndex == playlistSize) {
+        matchedIndex = relativeMatch != playlistSize ? relativeMatch : filenameMatch;
+    }
+    if (matchedIndex == playlistSize) {
+        return false;
+    }
+
+    projectm_playlist_set_position(_playlist, matchedIndex, true);
+    projectm_set_preset_locked(_projectM, true);
+    lastAppliedPresetTimestamp = firstPreset.startTimestampMs;
+    startupPresetSelected = true;
+    isInitialPresetLoaded = true;
+    UpdateWindowTitle();
+    return true;
+}
+
+void projectMSDL::selectInitialPreset()
+{
+    // A loaded LVS preset queue takes priority over the first preset in the
+    // chosen folder. This also works if IPC arrives before the cache is ready.
+    if (ipcManager && ipcManager->getPresetQueue().getPresetCount() != 0) {
+        if (ipcManager->needsFirstPresetAutoLoad) {
+            if (selectFirstQueuedPreset()) {
+                ipcManager->needsFirstPresetAutoLoad = false;
+            }
+        }
+        return;
+    }
+
+    if (startupPresetSelected || !_playlist || projectm_playlist_size(_playlist) == 0) {
+        return;
+    }
+
+    // projectM starts on its idle/default visualization unless a real preset
+    // is explicitly selected. Index 0 is the first available in --preset-dir.
+    projectm_playlist_set_position(_playlist, 0, true);
+    projectm_set_preset_locked(_projectM, true);
+    startupPresetSelected = true;
+    isInitialPresetLoaded = true;
+    UpdateWindowTitle();
+}
+
 void projectMSDL::applyRandomPreset(uint64_t timestampMs, bool allowTransition)
 {
     if (!play_random_presets || preset_list.empty()) {
@@ -785,23 +892,7 @@ void projectMSDL::renderFrame()
         ipcManager->pendingStateUpdate = false;
     }
 
-    if (ipcManager && ipcManager->needsFirstPresetAutoLoad) {
-        if (!preset_discovery_applied_once || preset_cache_build_in_progress || preset_cache_pending_apply) {
-            // Keep pending; presets/index are not ready yet.
-        } else {
-            auto queuedPresets = ipcManager->getPresetQueue().getAllPresets();
-            bool applied = false;
-            if (!queuedPresets.empty()) {
-            // Force a one-time switch to the first queued preset.
-            this->lastAppliedPresetTimestamp = std::numeric_limits<uint64_t>::max();
-                applied = updatePresetFromQueue(queuedPresets.front().startTimestampMs, false);
-            }
-            if (applied) {
-                isInitialPresetLoaded = true;
-                ipcManager->needsFirstPresetAutoLoad = false;
-            }
-        }
-    }
+    selectInitialPreset();
 
     if (!is_rendering && show_ui)
     {
@@ -1243,6 +1334,7 @@ void projectMSDL::presetClicked(size_t i)
     }
 
     play_random_presets = false; // Manual selection returns to the existing queue workflow.
+    startupPresetSelected = true;
     last_random_preset_slot = std::numeric_limits<uint64_t>::max();
     auto_focus_tree_on_preset_change = true;
     projectm_playlist_set_position(_playlist, static_cast<uint32_t>(i), true);
@@ -2049,15 +2141,21 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // Force a clean starting preset even if preview left a transition running.
-    // A hard cut also clears any in-flight transition held by libprojectM.
+    // Start with a real preset even when the user renders before the async
+    // preset cache is ready. A saved queue takes priority over folder defaults.
     this->lastAppliedPresetTimestamp = std::numeric_limits<uint64_t>::max();
-    if (play_random_presets && !preset_list.empty()) {
+    if (ipcManager && ipcManager->getPresetQueue().getPresetCount() != 0) {
+        if (!updatePresetFromQueue(ipcManager->getSessionStartOffsetMs(), false)) {
+            (void)selectFirstQueuedPreset();
+        }
+    } else if (play_random_presets && !preset_list.empty()) {
         last_random_preset_slot = std::numeric_limits<uint64_t>::max();
         applyRandomPreset(ipcManager ? ipcManager->getSessionStartOffsetMs() : 0, false);
-    } else if (ipcManager && !ipcManager->getPresetQueue().getAllPresets().empty()) {
-        (void)updatePresetFromQueue(ipcManager->getSessionStartOffsetMs(), false);
-    } else if (!preset_list.empty()) {
+    } else if (_playlist && projectm_playlist_size(_playlist) != 0) {
+        if (!startupPresetSelected) {
+            selectInitialPreset();
+        }
+        // Clear any in-flight transition before encoding the first frame.
         projectm_playlist_set_position(_playlist, projectm_playlist_get_position(_playlist), true);
     }
 

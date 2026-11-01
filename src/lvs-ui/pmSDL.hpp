@@ -202,6 +202,8 @@ private:
     void buildPresetCacheFromListAsync(std::vector<std::string> presetListSnapshot, bool focusCurrentPreset);
     void refreshPresetCache(bool focusCurrentPreset = true);
     bool updatePresetFromQueue(uint64_t timestampMs, bool doTransition);
+    bool selectFirstQueuedPreset();
+    void selectInitialPreset();
     static void presetSwitchedEvent(bool isHardCut, uint32_t index, void* context);
     static void presetSwitchFailedEvent(const char* presetFilename, const char* message, void* context);
 
@@ -296,6 +298,9 @@ private:
     uint64_t lastPreviewedPresetTimestamp{0};
     bool doPreviewTransition{false};
     bool isInitialPresetLoaded{false};
+    bool startupPresetSelected{false};
+    uint32_t lastStartupQueueLookupSize{std::numeric_limits<uint32_t>::max()};
+    std::string lastStartupQueueLookupName{};
     bool auto_focus_tree_on_preset_change{false};
 #if PM_ENABLE_PRESET_DIAGNOSTICS
     bool debug_preset_diagnostics{false};
