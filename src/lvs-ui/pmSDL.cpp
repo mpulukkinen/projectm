@@ -817,6 +817,10 @@ bool projectMSDL::selectFirstQueuedPreset()
     lastAppliedPresetTimestamp = firstPreset.startTimestampMs;
     startupPresetSelected = true;
     isInitialPresetLoaded = true;
+    // The lookup guard is for unresolved names only. Successful selections
+    // must remain reloadable at the start of an offline render.
+    lastStartupQueueLookupSize = std::numeric_limits<uint32_t>::max();
+    lastStartupQueueLookupName.clear();
     UpdateWindowTitle();
     return true;
 }
@@ -870,15 +874,18 @@ void projectMSDL::applyRandomPreset(uint64_t timestampMs, bool allowTransition)
         return;
     }
 
-    if (preset_list.empty()) {
+    // Random playback indexes the live projectM playlist, not the async UI
+    // cache. It must work even if the user starts rendering immediately.
+    const size_t playlistSize = _playlist ? projectm_playlist_size(_playlist) : 0;
+    if (playlistSize == 0) {
         return;
     }
 
-    if (random_preset_order.size() != preset_list.size()) {
+    if (random_preset_order.size() != playlistSize) {
         // An initial queued preset still counts as the preceding selection,
         // allowing a smooth transition to the first randomized preset.
         const bool wasQueuedFirst = last_random_preset_slot == 0 && random_preset_order.empty();
-        random_preset_order.resize(preset_list.size());
+        random_preset_order.resize(playlistSize);
         std::iota(random_preset_order.begin(), random_preset_order.end(), size_t{0});
         std::mt19937 generator(std::random_device{}());
         std::shuffle(random_preset_order.begin(), random_preset_order.end(), generator);
@@ -2168,8 +2175,7 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
         if (!updatePresetFromQueue(ipcManager->getSessionStartOffsetMs(), false)) {
             (void)selectFirstQueuedPreset();
         }
-    } else if (play_random_presets && !preset_list.empty()) {
-        last_random_preset_slot = std::numeric_limits<uint64_t>::max();
+    } else if (play_random_presets && _playlist && projectm_playlist_size(_playlist) != 0) {
         applyRandomPreset(ipcManager ? ipcManager->getSessionStartOffsetMs() : 0, false);
     } else if (_playlist && projectm_playlist_size(_playlist) != 0) {
         if (!startupPresetSelected) {
