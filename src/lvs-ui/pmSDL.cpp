@@ -554,6 +554,19 @@ void projectMSDL::togglePreview(bool restart)
         preview_clock_initialized = false; // reset clock on new preview start
         if (this->cli_has_audio && this->cli_audio_buf && this->cli_audio_len > 0)
         {
+            // Each preview starts cleanly from the first queued preset, even if
+            // another preset (or a partial transition) was shown beforehand.
+            if (ipcManager && ipcManager->getPresetQueue().getPresetCount() != 0) {
+                if (selectFirstQueuedPreset()) {
+                    ipcManager->needsFirstPresetAutoLoad = false;
+                    if (play_random_presets) {
+                        last_random_preset_slot = 0;
+                    }
+                }
+            } else {
+                selectInitialPreset();
+            }
+
             // Use last received timestamp from IPC for preview start
             // getLastReceivedTimestamp() returns relative position within session
             // Add sessionStartOffsetMs to get absolute position in audio
@@ -2172,8 +2185,13 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
         last_random_preset_slot = std::numeric_limits<uint64_t>::max();
     }
     if (ipcManager && ipcManager->getPresetQueue().getPresetCount() != 0) {
-        if (!updatePresetFromQueue(ipcManager->getSessionStartOffsetMs(), false)) {
-            (void)selectFirstQueuedPreset();
+        // Rendering must also start with a hard cut to the first queued item,
+        // regardless of any preset/transition left behind by preview.
+        if (selectFirstQueuedPreset()) {
+            ipcManager->needsFirstPresetAutoLoad = false;
+            if (play_random_presets) {
+                last_random_preset_slot = 0;
+            }
         }
     } else if (play_random_presets && _playlist && projectm_playlist_size(_playlist) != 0) {
         applyRandomPreset(ipcManager ? ipcManager->getSessionStartOffsetMs() : 0, false);
