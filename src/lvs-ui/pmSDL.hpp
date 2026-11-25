@@ -269,6 +269,8 @@ private:
     bool render_as_transparency{false};
     bool enable_preset_transitions{true}; // Scheduled changes only; manual selections always cut.
     bool play_random_presets{false};
+    std::string random_preset_start_path{};
+    uint64_t random_preset_start_time_ms{0};
     uint64_t random_preset_interval_ms{5000};
     char random_preset_interval_text[32]{"5"};
     std::vector<size_t> random_preset_order{};
@@ -277,6 +279,8 @@ private:
     bool random_preset_load_failed{false};
     bool random_preset_render_failed{false};
     uint64_t last_random_preset_slot{std::numeric_limits<uint64_t>::max()};
+    uint64_t currentRandomPlaybackTimestamp() const;
+    void restartRandomPlayback(uint64_t timestampMs);
     void applyRandomPreset(uint64_t timestampMs, bool allowTransition);
     Uint16 preset_duration_sec{20};
     std::string preset_base_path;

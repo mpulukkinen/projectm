@@ -89,4 +89,8 @@ if(BUILD_TESTING)
             tests/random_preset_interval_tests.cpp
             )
     add_test(NAME lvs_random_preset_interval_tests COMMAND lvs_random_preset_interval_tests)
+    add_executable(lvs_random_preset_start_tests
+            tests/random_preset_start_tests.cpp
+            )
+    add_test(NAME lvs_random_preset_start_tests COMMAND lvs_random_preset_start_tests)
 endif()
