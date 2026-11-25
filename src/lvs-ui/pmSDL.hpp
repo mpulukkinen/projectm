@@ -269,6 +269,8 @@ private:
     bool render_as_transparency{false};
     bool enable_preset_transitions{true}; // Scheduled changes only; manual selections always cut.
     bool play_random_presets{false};
+    size_t random_start_preset{std::numeric_limits<size_t>::max()};
+    uint64_t random_start_time_ms{0};
     uint64_t random_preset_interval_ms{5000};
     char random_preset_interval_text[32]{"5"};
     std::vector<size_t> random_preset_order{};

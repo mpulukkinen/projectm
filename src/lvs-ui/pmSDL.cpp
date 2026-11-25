@@ -556,7 +556,9 @@ void projectMSDL::togglePreview(bool restart)
         {
             // Each preview starts cleanly from the first queued preset, even if
             // another preset (or a partial transition) was shown beforehand.
-            if (ipcManager && ipcManager->getPresetQueue().getPresetCount() != 0) {
+            if (play_random_presets && _playlist && random_start_preset < projectm_playlist_size(_playlist)) {
+                last_random_preset_slot = std::numeric_limits<uint64_t>::max();
+            } else if (ipcManager && ipcManager->getPresetQueue().getPresetCount() != 0) {
                 if (selectFirstQueuedPreset()) {
                     ipcManager->needsFirstPresetAutoLoad = false;
                     if (play_random_presets) {
@@ -573,6 +575,10 @@ void projectMSDL::togglePreview(bool restart)
             uint32_t startTimestampMs = ipcManager ? static_cast<uint32_t>(ipcManager->getLastReceivedTimestamp()) : 0;
             if (ipcManager) {
                 startTimestampMs += static_cast<uint32_t>(ipcManager->getSessionStartOffsetMs());
+            }
+            if (play_random_presets && _playlist && random_start_preset < projectm_playlist_size(_playlist)) {
+                random_start_time_ms = startTimestampMs;
+                applyRandomPreset(startTimestampMs, false);
             }
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Previewing audio (F5) from absolute offset %u ms (session offset %llu ms + relative %llu ms)\n",
                 startTimestampMs,
@@ -860,6 +866,9 @@ bool projectMSDL::selectFirstQueuedPreset()
 
 void projectMSDL::selectInitialPreset()
 {
+    if (play_random_presets && _playlist && random_start_preset < projectm_playlist_size(_playlist)) {
+        return;
+    }
     // A loaded LVS preset queue takes priority over the first preset in the
     // chosen folder. This also works if IPC arrives before the cache is ready.
     if (ipcManager && ipcManager->getPresetQueue().getPresetCount() != 0) {
@@ -890,7 +899,9 @@ void projectMSDL::applyRandomPreset(uint64_t timestampMs, bool allowTransition)
         return;
     }
 
-    const uint64_t sessionStart = ipcManager ? ipcManager->getSessionStartOffsetMs() : 0;
+    const bool hasRandomStart = _playlist && random_start_preset < projectm_playlist_size(_playlist);
+    const uint64_t sessionStart = hasRandomStart ? random_start_time_ms :
+        (ipcManager ? ipcManager->getSessionStartOffsetMs() : 0);
     const uint64_t relativeTime = timestampMs > sessionStart ? timestampMs - sessionStart : 0;
     const uint64_t slot = relativeTime / random_preset_interval_ms;
     if (slot == last_random_preset_slot) {
@@ -899,7 +910,7 @@ void projectMSDL::applyRandomPreset(uint64_t timestampMs, bool allowTransition)
 
     // A loaded queue takes priority for the first interval. If the first
     // queued preset fails, try the next random candidate right away.
-    if (slot == 0 && ipcManager && ipcManager->getPresetQueue().getPresetCount() != 0) {
+    if (slot == 0 && !hasRandomStart && ipcManager && ipcManager->getPresetQueue().getPresetCount() != 0) {
         if (selectFirstQueuedPreset()) {
             last_random_preset_slot = 0;
             ipcManager->needsFirstPresetAutoLoad = false;
@@ -922,6 +933,10 @@ void projectMSDL::applyRandomPreset(uint64_t timestampMs, bool allowTransition)
         std::iota(random_preset_order.begin(), random_preset_order.end(), size_t{0});
         std::mt19937 generator(std::random_device{}());
         std::shuffle(random_preset_order.begin(), random_preset_order.end(), generator);
+        if (hasRandomStart) {
+            std::iter_swap(random_preset_order.begin(),
+                           std::find(random_preset_order.begin(), random_preset_order.end(), random_start_preset));
+        }
         last_random_preset_slot = wasQueuedFirst ? 0 : std::numeric_limits<uint64_t>::max();
     }
 
@@ -1109,6 +1124,11 @@ void projectMSDL::renderFrame()
         ImGui::Checkbox("Transitions between scheduled and random presets", &enable_preset_transitions);
         if (ImGui::Checkbox("Play all presets randomly", &play_random_presets)) {
             last_random_preset_slot = std::numeric_limits<uint64_t>::max();
+            if (!play_random_presets) {
+                random_start_preset = std::numeric_limits<size_t>::max();
+                random_preset_order.clear();
+                lastAppliedPresetTimestamp = std::numeric_limits<uint64_t>::max();
+            }
         }
         if (play_random_presets) {
             // InputFloat follows the active locale, so accept both decimal separators explicitly.
@@ -1136,6 +1156,10 @@ void projectMSDL::renderFrame()
                 }
             }
             ImGui::TextDisabled("0.01-3600 seconds. Both '.' and ',' work as decimal separators.");
+            ImGui::TextDisabled("Click a preset to set the starting preset.");
+            if (random_start_preset < preset_list.size()) {
+                ImGui::TextWrapped("Starting preset: %s", preset_list[random_start_preset].c_str());
+            }
             ImGui::TextDisabled("Random playback does not modify the saved preset queue.");
         }
  #if PM_ENABLE_PRESET_DIAGNOSTICS
@@ -1171,11 +1195,12 @@ void projectMSDL::renderFrame()
             togglePreview();
         }
 
-        ImGui::SameLine();
-
-        if (ImGui::Button("Save playlist") && ipcManager)
-        {
-            ipcManager->sendCurrentState();
+        if (!play_random_presets) {
+            ImGui::SameLine();
+            if (ImGui::Button("Save playlist") && ipcManager)
+            {
+                ipcManager->sendCurrentState();
+            }
         }
 
         ImGui::SameLine();
@@ -1367,7 +1392,7 @@ void projectMSDL::renderFrame()
         ImGui::End();
 
         // Preset Queue Window
-        if (ipcManager) {
+        if (ipcManager && !play_random_presets) {
             ipcManager->getPresetQueue().renderUI();
         }
 
@@ -1432,7 +1457,22 @@ void projectMSDL::presetClicked(size_t i)
         return;
     }
 
-    play_random_presets = false; // Manual selection returns to the existing queue workflow.
+    if (play_random_presets) {
+        random_start_preset = i;
+        random_start_time_ms = ipcManager
+            ? ipcManager->getSessionStartOffsetMs() + ipcManager->getLastReceivedTimestamp() : 0;
+        if (is_previewing && preview_clock_initialized) {
+            random_start_time_ms += std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - preview_start_time).count();
+        }
+        random_preset_order.clear();
+        last_random_preset_slot = std::numeric_limits<uint64_t>::max();
+        auto_focus_tree_on_preset_change = false;
+        startupPresetSelected = true;
+        applyRandomPreset(random_start_time_ms, false);
+        return;
+    }
+
     startupPresetSelected = true;
     last_random_preset_slot = std::numeric_limits<uint64_t>::max();
     auto_focus_tree_on_preset_change = true;
@@ -2259,7 +2299,10 @@ void projectMSDL::renderSequenceFromAudio(const SDL_AudioSpec& audioSpec, const 
     if (play_random_presets) {
         last_random_preset_slot = std::numeric_limits<uint64_t>::max();
     }
-    if (ipcManager && ipcManager->getPresetQueue().getPresetCount() != 0) {
+    if (play_random_presets && _playlist && random_start_preset < projectm_playlist_size(_playlist)) {
+        random_start_time_ms = ipcManager ? ipcManager->getSessionStartOffsetMs() : 0;
+        applyRandomPreset(random_start_time_ms, false);
+    } else if (ipcManager && ipcManager->getPresetQueue().getPresetCount() != 0) {
         // Rendering must also start with a hard cut to the first queued item,
         // regardless of any preset/transition left behind by preview.
         if (selectFirstQueuedPreset()) {
